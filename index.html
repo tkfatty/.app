@@ -2,9 +2,138 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Coming Soon</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tkfatty.app</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0f0f0f;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 640px;
+      padding: 2rem;
+    }
+
+    .header {
+      font-size: 0.75rem;
+      color: #555;
+      margin-bottom: 2rem;
+      letter-spacing: 0.1em;
+    }
+
+    .row {
+      display: flex;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 0.6rem 0;
+    }
+
+    .label {
+      width: 200px;
+      flex-shrink: 0;
+      color: #555;
+      font-size: 0.85rem;
+    }
+
+    .value {
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      word-break: break-all;
+    }
+
+    .value.loading { color: #333; }
+    .value.highlight { color: #7eb8f7; }
+
+    .footer {
+      margin-top: 2rem;
+      font-size: 0.7rem;
+      color: #333;
+    }
+  </style>
 </head>
 <body>
-  <h1>Hello, Cloudflare Pages</h1>
+<div class="container">
+  <div class="header">// network info</div>
+
+  <div class="row">
+    <span class="label">ip</span>
+    <span class="value highlight loading" id="ip">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">hostname</span>
+    <span class="value loading" id="hostname">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">city</span>
+    <span class="value loading" id="city">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">region</span>
+    <span class="value loading" id="region">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">country</span>
+    <span class="value loading" id="country">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">org</span>
+    <span class="value loading" id="org">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">timezone</span>
+    <span class="value loading" id="timezone">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">user-agent</span>
+    <span class="value loading" id="ua">取得中...</span>
+  </div>
+  <div class="row">
+    <span class="label">language</span>
+    <span class="value loading" id="lang">取得中...</span>
+  </div>
+
+  <div class="footer" id="footer">loading...</div>
+</div>
+
+<script>
+  function set(id, val) {
+    const el = document.getElementById(id);
+    el.textContent = val || '—';
+    el.classList.remove('loading');
+  }
+
+  async function load() {
+    set('ua', navigator.userAgent);
+    set('lang', navigator.language);
+
+    try {
+      const res = await fetch('https://ipinfo.io/json');
+      const d = await res.json();
+      set('ip',       d.ip);
+      set('hostname', d.hostname);
+      set('city',     d.city);
+      set('region',   d.region);
+      set('country',  d.country);
+      set('org',      d.org);
+      set('timezone', d.timezone);
+    } catch (e) {
+      ['ip','hostname','city','region','country','org','timezone']
+        .forEach(id => set(id, 'エラー'));
+    }
+
+    document.getElementById('footer').textContent =
+      '// ' + new Date().toISOString();
+  }
+
+  load();
+</script>
 </body>
 </html>
