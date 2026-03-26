@@ -5,132 +5,431 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>tkfatty.app</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0a0a;
+      --border: #181818;
+      --text: #d4d4d4;
+      --muted: #3a3a3a;
+      --label: #484848;
+      --c-ip:  #7eb8f7;
+      --c-hw:  #f7c97e;
+      --c-fp:  #7ef7b8;
+      --c-ok:  #7ef77e;
+      --c-warn:#f77e7e;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
 
     body {
-      background: #0f0f0f;
-      color: #e0e0e0;
-      font-family: 'Courier New', monospace;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      line-height: 1.5;
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      padding: 3rem 1.25rem;
     }
 
-    .container {
-      width: 100%;
-      max-width: 640px;
-      padding: 2rem;
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
     }
 
-    .header {
-      font-size: 0.75rem;
-      color: #555;
-      margin-bottom: 2rem;
-      letter-spacing: 0.1em;
+    .container { max-width: 700px; margin: 0 auto; }
+
+    .site-title {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 2.5rem;
+      letter-spacing: .15em;
+    }
+
+    .section { margin-bottom: 1.75rem; }
+
+    .section-header {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: .08em;
+      padding-bottom: 5px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1px;
     }
 
     .row {
       display: flex;
-      border-bottom: 1px solid #1e1e1e;
-      padding: 0.6rem 0;
+      border-bottom: 1px solid #111;
+      padding: 5px 0;
+      opacity: 0;
+      animation: fi .25s forwards;
+    }
+    @keyframes fi {
+      from { opacity:0; transform: translateX(-3px); }
+      to   { opacity:1; transform: translateX(0); }
     }
 
     .label {
-      width: 200px;
+      width: 220px;
       flex-shrink: 0;
-      color: #555;
-      font-size: 0.85rem;
+      color: var(--label);
+      padding-right: 1rem;
     }
+    .value { color: var(--text); word-break: break-all; flex: 1; }
+    .value.pending { color: #202020; }
+    .value.ip   { color: var(--c-ip); }
+    .value.hw   { color: var(--c-hw); }
+    .value.fp   { color: var(--c-fp); }
+    .value.ok   { color: var(--c-ok); }
+    .value.warn { color: var(--c-warn); }
 
-    .value {
-      color: #e0e0e0;
-      font-size: 0.85rem;
-      word-break: break-all;
+    /* Privacy */
+    .privacy {
+      margin-top: 3rem;
+      border: 1px solid var(--border);
     }
-
-    .value.loading { color: #333; }
-    .value.highlight { color: #7eb8f7; }
+    .privacy-btn {
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 11px;
+      text-align: left;
+      padding: 10px 14px;
+      cursor: pointer;
+      letter-spacing: .08em;
+      display: flex;
+      justify-content: space-between;
+    }
+    .privacy-btn:hover { color: var(--text); }
+    .privacy-body {
+      display: none;
+      padding: 16px 14px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--label);
+      line-height: 1.9;
+    }
+    .privacy-body.open { display: block; }
+    .privacy-body h4 { color: var(--text); margin: 14px 0 4px; font-size: 12px; }
+    .privacy-body h4:first-child { margin-top: 0; }
+    .privacy-body a { color: var(--c-ip); }
+    .privacy-body code { color: var(--c-hw); }
 
     .footer {
-      margin-top: 2rem;
-      font-size: 0.7rem;
-      color: #333;
+      margin-top: 2.5rem;
+      font-size: 11px;
+      color: #222;
     }
   </style>
 </head>
 <body>
 <div class="container">
-  <div class="header">// network info</div>
+  <div class="site-title">// tkfatty.app &mdash; network info</div>
 
-  <div class="row">
-    <span class="label">ip</span>
-    <span class="value highlight loading" id="ip">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">hostname</span>
-    <span class="value loading" id="hostname">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">city</span>
-    <span class="value loading" id="city">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">region</span>
-    <span class="value loading" id="region">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">country</span>
-    <span class="value loading" id="country">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">org</span>
-    <span class="value loading" id="org">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">timezone</span>
-    <span class="value loading" id="timezone">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">user-agent</span>
-    <span class="value loading" id="ua">取得中...</span>
-  </div>
-  <div class="row">
-    <span class="label">language</span>
-    <span class="value loading" id="lang">取得中...</span>
+  <div class="section">
+    <div class="section-header">// network &middot; ip</div>
+    <div class="row" style="animation-delay:.04s"><span class="label">ip</span><span class="value ip pending" id="ip">—</span></div>
+    <div class="row" style="animation-delay:.06s"><span class="label">hostname</span><span class="value pending" id="hostname">—</span></div>
+    <div class="row" style="animation-delay:.08s"><span class="label">city</span><span class="value pending" id="city">—</span></div>
+    <div class="row" style="animation-delay:.10s"><span class="label">region</span><span class="value pending" id="region">—</span></div>
+    <div class="row" style="animation-delay:.12s"><span class="label">country</span><span class="value pending" id="country">—</span></div>
+    <div class="row" style="animation-delay:.14s"><span class="label">org (isp)</span><span class="value pending" id="org">—</span></div>
+    <div class="row" style="animation-delay:.16s"><span class="label">timezone (server)</span><span class="value pending" id="timezone">—</span></div>
+    <div class="row" style="animation-delay:.18s"><span class="label">local ip (webrtc)</span><span class="value ip pending" id="local-ip">—</span></div>
   </div>
 
-  <div class="footer" id="footer">loading...</div>
+  <div class="section">
+    <div class="section-header">// network &middot; quality</div>
+    <div class="row" style="animation-delay:.20s"><span class="label">connection type</span><span class="value hw pending" id="conn-type">—</span></div>
+    <div class="row" style="animation-delay:.22s"><span class="label">downlink (est.)</span><span class="value hw pending" id="downlink">—</span></div>
+    <div class="row" style="animation-delay:.24s"><span class="label">rtt</span><span class="value hw pending" id="rtt">—</span></div>
+    <div class="row" style="animation-delay:.26s"><span class="label">save-data</span><span class="value pending" id="save-data">—</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">// hardware</div>
+    <div class="row" style="animation-delay:.28s"><span class="label">gpu vendor</span><span class="value hw pending" id="gpu-vendor">—</span></div>
+    <div class="row" style="animation-delay:.30s"><span class="label">gpu renderer</span><span class="value hw pending" id="gpu-renderer">—</span></div>
+    <div class="row" style="animation-delay:.32s"><span class="label">cpu cores</span><span class="value hw pending" id="cpu-cores">—</span></div>
+    <div class="row" style="animation-delay:.34s"><span class="label">memory (approx)</span><span class="value hw pending" id="memory">—</span></div>
+    <div class="row" style="animation-delay:.36s"><span class="label">battery level</span><span class="value pending" id="battery-level">—</span></div>
+    <div class="row" style="animation-delay:.38s"><span class="label">charging</span><span class="value pending" id="battery-charging">—</span></div>
+    <div class="row" style="animation-delay:.40s"><span class="label">touch points (max)</span><span class="value pending" id="touch-points">—</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">// display</div>
+    <div class="row" style="animation-delay:.42s"><span class="label">screen resolution</span><span class="value pending" id="resolution">—</span></div>
+    <div class="row" style="animation-delay:.44s"><span class="label">available resolution</span><span class="value pending" id="avail-res">—</span></div>
+    <div class="row" style="animation-delay:.46s"><span class="label">device pixel ratio</span><span class="value pending" id="dpr">—</span></div>
+    <div class="row" style="animation-delay:.48s"><span class="label">color depth</span><span class="value pending" id="color-depth">—</span></div>
+    <div class="row" style="animation-delay:.50s"><span class="label">hdr support</span><span class="value pending" id="hdr">—</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">// browser &middot; os</div>
+    <div class="row" style="animation-delay:.52s"><span class="label">user-agent</span><span class="value pending" id="ua">—</span></div>
+    <div class="row" style="animation-delay:.54s"><span class="label">language</span><span class="value pending" id="lang">—</span></div>
+    <div class="row" style="animation-delay:.56s"><span class="label">platform</span><span class="value pending" id="platform">—</span></div>
+    <div class="row" style="animation-delay:.58s"><span class="label">architecture</span><span class="value pending" id="arch">—</span></div>
+    <div class="row" style="animation-delay:.60s"><span class="label">timezone (client)</span><span class="value pending" id="tz-client">—</span></div>
+    <div class="row" style="animation-delay:.62s"><span class="label">dark mode</span><span class="value pending" id="dark-mode">—</span></div>
+    <div class="row" style="animation-delay:.64s"><span class="label">cookies</span><span class="value pending" id="cookies">—</span></div>
+    <div class="row" style="animation-delay:.66s"><span class="label">do not track</span><span class="value pending" id="dnt">—</span></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">// fingerprint</div>
+    <div class="row" style="animation-delay:.68s"><span class="label">canvas hash</span><span class="value fp pending" id="canvas-fp">—</span></div>
+    <div class="row" style="animation-delay:.70s"><span class="label">audio hash</span><span class="value fp pending" id="audio-fp">—</span></div>
+    <div class="row" style="animation-delay:.72s"><span class="label">detected fonts</span><span class="value fp pending" id="fonts">—</span></div>
+  </div>
+
+  <div class="privacy">
+    <button class="privacy-btn" onclick="togglePrivacy()">
+      <span>// privacy policy</span>
+      <span id="pp-arrow">[ + ]</span>
+    </button>
+    <div class="privacy-body" id="pp-body">
+      <h4>収集する情報</h4>
+      このページはブラウザおよびネットワークから取得できる技術情報（IPアドレス、ハードウェア情報、ブラウザ環境、フィンガープリント等）を収集し、画面上に表示します。
+
+      <h4>データの保存について</h4>
+      収集した情報はサーバーへの送信・保存を一切行いません。すべての処理はブラウザ上（クライアントサイド）のみで完結し、ページを閉じると消去されます。サーバー側ログも記録しません。
+
+      <h4>フィンガープリントについて</h4>
+      Canvas API および Web Audio API を使用したフィンガープリントを生成します。これはブラウザの描画特性・音声処理特性に基づくハッシュ値であり、端末を一意に識別し得る情報です。当サイトではこの値の外部送信・保存は行いません。また、インストール済みフォントの推定にも Canvas API を使用します。
+
+      <h4>サードパーティサービス</h4>
+      IPアドレス情報の取得に <a href="https://ipinfo.io" target="_blank">ipinfo.io</a> を使用しています。このリクエストによりあなたのIPアドレスがipinfo.ioのサーバーに送信されます。ipinfo.ioのプライバシーポリシーは<a href="https://ipinfo.io/privacy-policy" target="_blank">こちら</a>をご参照ください。
+
+      <h4>WebRTC について</h4>
+      ローカルIPアドレスの取得に WebRTC を使用します。<code>RTCPeerConnection</code> を一時的に生成し、ICE candidate からローカルIPを読み取った後、即座に接続を破棄します。外部への接続は行いません。
+
+      <h4>利用目的</h4>
+      当サイトは個人の技術学習・ポートフォリオを目的として運営されています。収集情報の商業利用・第三者提供は行いません。
+    </div>
+  </div>
+
+  <div class="footer" id="footer">—</div>
 </div>
 
 <script>
-  function set(id, val) {
+  function set(id, val, cls) {
     const el = document.getElementById(id);
-    el.textContent = val || '—';
-    el.classList.remove('loading');
+    if (!el) return;
+    el.textContent = (val !== null && val !== undefined && val !== '') ? val : '取得不可';
+    el.className = 'value' + (cls ? ' ' + cls : '');
+  }
+
+  function togglePrivacy() {
+    const body = document.getElementById('pp-body');
+    const arrow = document.getElementById('pp-arrow');
+    body.classList.toggle('open');
+    arrow.textContent = body.classList.contains('open') ? '[ - ]' : '[ + ]';
+  }
+
+  function djb2(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  }
+
+  function getGPU() {
+    try {
+      const c = document.createElement('canvas');
+      const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (!gl) return { vendor: '非対応', renderer: '非対応' };
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return ext
+        ? { vendor: gl.getParameter(ext.UNMASKED_VENDOR_WEBGL), renderer: gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) }
+        : { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
+    } catch(e) { return { vendor: '取得不可', renderer: '取得不可' }; }
+  }
+
+  function getCanvasFP() {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 280; c.height = 60;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#f0f'; ctx.fillRect(0, 0, 280, 60);
+      ctx.fillStyle = '#0ff'; ctx.font = 'bold 18px Arial';
+      ctx.fillText('fp \u2603 test', 10, 28);
+      ctx.fillStyle = 'rgba(255,128,0,0.6)'; ctx.font = '14px "Courier New"';
+      ctx.fillText('canvas \u2764 2024', 40, 48);
+      ctx.strokeStyle = '#00f'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(220, 30, 22, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(0,255,0,0.4)';
+      ctx.fillRect(10, 50, 50, 8);
+      return djb2(c.toDataURL().slice(22, 200));
+    } catch(e) { return '取得不可'; }
+  }
+
+  async function getAudioFP() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return '非対応';
+      const ctx = new AC();
+      const osc = ctx.createOscillator();
+      const analyser = ctx.createAnalyser();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.type = 'triangle';
+      osc.frequency.value = 10000;
+      osc.connect(analyser);
+      analyser.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(0);
+      await new Promise(r => setTimeout(r, 100));
+      const data = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(data);
+      osc.stop();
+      await ctx.close();
+      const sum = data.slice(0, 128).reduce((a, b) => a + Math.abs(b), 0);
+      return djb2(sum.toFixed(8));
+    } catch(e) { return '取得不可'; }
+  }
+
+  function detectFonts() {
+    const list = [
+      'Arial','Arial Black','Comic Sans MS','Courier New','Georgia',
+      'Helvetica','Impact','Palatino','Times New Roman','Trebuchet MS',
+      'Verdana','Tahoma','Lucida Console','Lucida Sans Unicode',
+      'MS Sans Serif','MS Serif','Symbol','Webdings','Wingdings',
+      'Meiryo','Yu Gothic','Yu Mincho','MS Gothic','MS Mincho',
+      'Hiragino Kaku Gothic Pro','Osaka',
+      'Menlo','Monaco','Consolas','Fira Code','Source Code Pro',
+      'JetBrains Mono','Roboto','Noto Sans','Noto Serif'
+    ];
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    const probe = 'mmmmmmmmmmlli';
+    ctx.font = `72px monospace`;
+    const base = ctx.measureText(probe).width;
+    const found = list.filter(f => {
+      ctx.font = `72px "${f}", monospace`;
+      return ctx.measureText(probe).width !== base;
+    });
+    return found;
+  }
+
+  async function getLocalIP() {
+    return new Promise(resolve => {
+      try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        pc.createOffer().then(o => pc.setLocalDescription(o));
+        const ips = new Set();
+        pc.onicecandidate = e => {
+          if (!e || !e.candidate) return;
+          const m = e.candidate.candidate.match(/(\d{1,3}(?:\.\d{1,3}){3})/g);
+          if (m) m.forEach(ip => { if (!ip.startsWith('0.')) ips.add(ip); });
+        };
+        setTimeout(() => { pc.close(); resolve(ips.size ? [...ips].join(', ') : '取得不可'); }, 1500);
+      } catch(e) { resolve('取得不可'); }
+    });
   }
 
   async function load() {
+    // browser / os (sync)
     set('ua', navigator.userAgent);
-    set('lang', navigator.language);
+    set('lang', (navigator.languages || [navigator.language]).join(', '));
+    set('platform', navigator.platform || '不明');
+    set('tz-client', Intl.DateTimeFormat().resolvedOptions().timeZone);
+    set('dark-mode', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    set('cookies', navigator.cookieEnabled ? 'enabled' : 'disabled', navigator.cookieEnabled ? '' : 'warn');
+    const dnt = navigator.doNotTrack;
+    set('dnt', dnt === '1' ? 'enabled' : dnt === '0' ? 'disabled' : '未設定');
 
+    if (navigator.userAgentData) {
+      navigator.userAgentData
+        .getHighEntropyValues(['architecture', 'bitness'])
+        .then(d => set('arch', [d.architecture, d.bitness ? d.bitness + 'bit' : ''].filter(Boolean).join(' ') || '不明'))
+        .catch(() => set('arch', '取得不可'));
+    } else {
+      set('arch', '非対応');
+    }
+
+    // display (sync)
+    set('resolution',   `${screen.width} × ${screen.height}`);
+    set('avail-res',    `${screen.availWidth} × ${screen.availHeight}`);
+    const dpr = window.devicePixelRatio;
+    set('dpr', `${dpr}x${dpr >= 2 ? ' (Retina / HiDPI)' : ''}`);
+    set('color-depth',  `${screen.colorDepth} bit`);
+    set('hdr',          matchMedia('(dynamic-range: high)').matches ? 'supported' : 'not supported');
+
+    // hardware (sync)
+    const gpu = getGPU();
+    set('gpu-vendor',   gpu.vendor, 'hw');
+    set('gpu-renderer', gpu.renderer, 'hw');
+    set('cpu-cores',    navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} logical cores` : '取得不可', 'hw');
+    set('memory',       navigator.deviceMemory ? `${navigator.deviceMemory} GB (approx)` : '取得不可', 'hw');
+    set('touch-points', `${navigator.maxTouchPoints}${navigator.maxTouchPoints > 0 ? ' (touch device)' : ' (no touch)'}`);
+
+    // network quality (sync)
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+      set('conn-type', conn.effectiveType || conn.type || '不明', 'hw');
+      set('downlink',  conn.downlink != null ? `${conn.downlink} Mbps (est.)` : '不明', 'hw');
+      set('rtt',       conn.rtt != null ? `${conn.rtt} ms` : '不明');
+      set('save-data', conn.saveData ? 'enabled' : 'disabled', conn.saveData ? 'warn' : '');
+    } else {
+      ['conn-type','downlink','rtt','save-data'].forEach(id => set(id, '非対応 (Firefox/Safari)'));
+    }
+
+    // battery (async)
+    if (navigator.getBattery) {
+      navigator.getBattery().then(b => {
+        const pct = Math.round(b.level * 100);
+        set('battery-level', `${pct}%`, pct <= 20 ? 'warn' : 'hw');
+        let cs = b.charging ? 'charging' : 'discharging';
+        if (b.charging && b.chargingTime !== Infinity)
+          cs += ` — full in ${Math.round(b.chargingTime / 60)} min`;
+        if (!b.charging && b.dischargingTime !== Infinity)
+          cs += ` — ${Math.round(b.dischargingTime / 60)} min remaining`;
+        set('battery-charging', cs, b.charging ? 'ok' : '');
+      }).catch(() => {
+        set('battery-level', '取得不可');
+        set('battery-charging', '取得不可');
+      });
+    } else {
+      set('battery-level', '非対応 (Safari)');
+      set('battery-charging', '非対応 (Safari)');
+    }
+
+    // fingerprints
+    set('canvas-fp', getCanvasFP(), 'fp');
+    getAudioFP().then(fp => set('audio-fp', fp, 'fp'));
+    const fonts = detectFonts();
+    set('fonts', `${fonts.length} detected — ${fonts.join(', ')}`, 'fp');
+
+    // WebRTC local IP (async)
+    getLocalIP().then(ip => set('local-ip', ip, 'ip'));
+
+    // ipinfo.io (async)
     try {
       const res = await fetch('https://ipinfo.io/json');
       const d = await res.json();
-      set('ip',       d.ip);
-      set('hostname', d.hostname);
+      set('ip',       d.ip,       'ip');
+      set('hostname', d.hostname || '—');
       set('city',     d.city);
       set('region',   d.region);
       set('country',  d.country);
       set('org',      d.org);
       set('timezone', d.timezone);
-    } catch (e) {
+    } catch(e) {
       ['ip','hostname','city','region','country','org','timezone']
-        .forEach(id => set(id, 'エラー'));
+        .forEach(id => set(id, 'error', 'warn'));
     }
 
     document.getElementById('footer').textContent =
-      '// ' + new Date().toISOString();
+      '// generated ' + new Date().toISOString();
   }
 
   load();
