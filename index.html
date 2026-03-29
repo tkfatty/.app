@@ -1,961 +1,768 @@
-// blob.tkfatty.app - Cloudflare Worker
-// Bindings: R2 -> BUCKET, D1 -> DB
-// Variables: CF_TEAM_DOMAIN, CF_AUD, CF_SECRET (Secret type)
-
-var MIME = {
-  jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',
-  webp:'image/webp',svg:'image/svg+xml',ico:'image/x-icon',
-  pdf:'application/pdf',txt:'text/plain',md:'text/markdown',csv:'text/csv',
-  doc:'application/msword',
-  docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls:'application/vnd.ms-excel',
-  xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  ppt:'application/vnd.ms-powerpoint',
-  pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  js:'text/javascript',ts:'text/typescript',html:'text/html',css:'text/css',
-  json:'application/json',xml:'application/xml',py:'text/x-python',sh:'text/x-sh',
-  zip:'application/zip',gz:'application/gzip',tar:'application/x-tar',
-  '7z':'application/x-7z-compressed',rar:'application/x-rar-compressed',
-  mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',
-  mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',flac:'audio/flac',
-};
-
-function getMime(key) {
-  var ext = (key.split('.').pop() || '').toLowerCase();
-  return MIME[ext] || 'application/octet-stream';
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tkfatty.app</title>
+<style>
+:root {
+  --bg: #E8EAED;
+  --surface: #F4F5F7;
+  --surface2: #FFFFFF;
+  --border: #C8CBD0;
+  --text: #1A1C1E;
+  --text2: #5A5D63;
+  --text3: #9EA3AB;
+  --red: #D93025;    --red-dk: #A52119;
+  --yellow: #F5C518; --yellow-dk: #B8900A;
+  --blue: #2B5BE0;   --blue-dk: #1B3FA0;
+  --green: #2A9E52;  --green-dk: #1A6E38;
+  --orange: #E8710A; --orange-dk: #B35508;
+  --purple: #7C3AED; --purple-dk: #5B21B6;
+  --font: "DM Mono", "Courier New", Courier, monospace;
 }
 
-async function verifyJwt(token, teamDomain, aud) {
-  try {
-    var jwksRes = await fetch('https://' + teamDomain + '/cdn-cgi/access/certs', {cf:{cacheTtl:600}});
-    var jwksData = await jwksRes.json();
-    var keys = jwksData.keys;
-    var headerB64 = token.split('.')[0];
-    var header = JSON.parse(atob(headerB64.replace(/-/g,'+').replace(/_/g,'/')));
-    var jwk = null;
-    for (var i = 0; i < keys.length; i++) { if (keys[i].kid === header.kid) { jwk = keys[i]; break; } }
-    if (!jwk) return false;
-    var key = await crypto.subtle.importKey('jwk', jwk, {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'}, false, ['verify']);
-    var parts = token.split('.');
-    var data = new TextEncoder().encode(parts[0] + '.' + parts[1]);
-    var sigBuf = Uint8Array.from(atob(parts[2].replace(/-/g,'+').replace(/_/g,'/')), function(c){return c.charCodeAt(0);});
-    var valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, sigBuf, data);
-    if (!valid) return false;
-    var payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
-    var now = Math.floor(Date.now()/1000);
-    if (payload.exp < now) return false;
-    if (aud && payload.aud !== aud && !(payload.aud && payload.aud.includes && payload.aud.includes(aud))) return false;
-    return payload;
-  } catch(e) { return false; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, #B8BCC4 1px, transparent 1px);
+  background-size: 28px 28px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  min-height: 100vh;
 }
 
-async function hmac(msg, secret) {
-  var key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
-  var sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(sig), function(b){return b.toString(16).padStart(2,'0');}).join('');
+/* -- header -- */
+.site-header {
+  background: var(--surface2);
+  border-bottom: 1.5px solid var(--border);
+  box-shadow: 0 2px 0 var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.header-inner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 12px 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.logo {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-decoration: none;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.logo span { color: var(--blue); }
+.nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.nav-link {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text2);
+  text-decoration: none;
+  letter-spacing: .04em;
+  transition: all .12s;
+  box-shadow: 0 2px 0 var(--border);
+  white-space: nowrap;
+}
+.nav-link:hover { color: var(--text); border-color: var(--text3); }
+.nav-link:active { transform: translateY(1px); box-shadow: 0 1px 0 var(--border); }
+.nav-link.ext::after { content: " ^"; font-size: 9px; color: var(--text3); }
+
+/* -- page layout -- */
+.page { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+
+/* -- ip section -- */
+.ip-card {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 0 var(--border);
+  margin-bottom: 2rem;
+}
+.ip-card-header {
+  background: var(--bg);
+  padding: 10px 16px;
+  border-bottom: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ip-card-title {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text3);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.ip-refresh {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 7px;
+  border: 1.5px solid var(--border);
+  background: var(--surface2);
+  color: var(--text2);
+  cursor: pointer;
+  box-shadow: 0 3px 0 var(--border);
+  transition: transform .07s, box-shadow .07s;
+}
+.ip-refresh:hover { color: var(--text); }
+.ip-refresh:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--border); }
+
+.ip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (max-width: 600px) { .ip-grid { grid-template-columns: 1fr; } }
+
+.ip-row {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px;
+  border-bottom: 1px solid #F0F1F3;
+  border-right: 1px solid #F0F1F3;
+}
+.ip-row:nth-child(even) { border-right: none; }
+@media (max-width: 600px) {
+  .ip-row { border-right: none; }
+  .ip-row:nth-child(odd) { border-right: none; }
+}
+.ip-label {
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.ip-value {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+  min-height: 18px;
+}
+.ip-value.accent { color: var(--blue); font-weight: 500; }
+.ip-value.pending { color: var(--border); }
+
+.fp-section {
+  border-top: 1.5px solid var(--border);
+}
+.fp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+@media (max-width: 600px) { .fp-grid { grid-template-columns: 1fr; } }
+.fp-row {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px;
+  border-right: 1px solid #F0F1F3;
+  border-bottom: 1px solid #F0F1F3;
+}
+.fp-row:last-child { border-right: none; border-bottom: none; }
+.fp-row:nth-child(3) { border-right: none; }
+
+/* -- keycap button -- */
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 16px;
+  border-radius: 9px;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+  transition: transform .07s, box-shadow .07s;
+  letter-spacing: .03em;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.key:active { transform: translateY(3px) !important; }
+.key-blue { background: var(--blue); color: #fff; box-shadow: 0 5px 0 var(--blue-dk), 0 6px 2px rgba(0,0,0,.18); }
+.key-blue:hover { background: #3d6ef5; }
+.key-blue:active { box-shadow: 0 2px 0 var(--blue-dk); }
+
+/* -- section heading -- */
+.section-hdr {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text3);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: .75rem;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 
-var YOJI = [
-  "issekinicho","onkochishin","shichitenhakki","ishindenshin","ichigoichie",
-  "kishikaisei","jigojitoku","taikibansei","shikosakugo","kikiippatsu",
-  "denkosekka","ittoryodan","sessatakuma","happobijin","hyakusenrenma",
-  "kanzenmuketsu","taizenjijaku","junpumanpan","gashinshotan","shimensoka",
-  "rinkiohen","ingaoho","jikyujisoku","bunburyodo","isshoukenmei",
-  "hyakkaryoran","tenchimuyo","shinkiitten","unsanmusho","zenryokutokyu",
-  "mugamuchu","kidoairaku","tenkamuteki","bajitofu","ryutodabi",
-  "ikkiichiu","shikuhakku","hanshinhangi","sentehissho","juunintoiro",
-  "nininsankyaku","daidousoui","mutenmusou","zengoufukaku","shinshobodai",
-  "fuekiryuko","ichoittan","tenshinranman","jakunikukyoshoku",
-  "gokurakujoudo","zenkonzenryou","mushinmuyo","funkyuikkan",
-  "senshinkougo","hakurankanchi","tokijizai","zenryoikusei",
-  "ikkyokansen","ittanshoku","nanshohoku","doitsukansha",
-  "icchoyuuseki","taishouhon","kakurinoshin","ittenshoku",
-  "zengoumuteki","ichidantaisei","hyakujitsukaigen","ichinenikkann",
-];
+/* -- nav cards -- */
+.nav-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+@media (max-width: 650px) { .nav-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 420px) { .nav-cards { grid-template-columns: 1fr; } }
 
-async function genToken(db, table) {
-  var candidates = YOJI.slice().sort(function(){return Math.random()-0.5;});
-  for (var i = 0; i < Math.min(10, candidates.length); i++) {
-    var col = table === 'albums' ? 'SELECT token FROM albums WHERE token=?' : 'SELECT token FROM shares WHERE token=?';
-    var existing = await db.prepare(col).bind(candidates[i]).first();
-    if (!existing) return candidates[i];
+.nav-card {
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 16px;
+  text-decoration: none;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 0 var(--border);
+  transition: border-color .12s, box-shadow .12s, transform .07s;
+  position: relative;
+  overflow: hidden;
+}
+.nav-card:hover { border-color: var(--text3); box-shadow: 0 3px 0 var(--border); }
+.nav-card:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--border); }
+.nav-card.disabled { opacity: .55; pointer-events: none; }
+.nav-card-icon { font-size: 22px; line-height: 1; margin-bottom: 4px; }
+.nav-card-title { font-size: 13px; font-weight: 500; color: var(--text); }
+.nav-card-desc { font-size: 11px; color: var(--text3); line-height: 1.6; }
+.nav-card-url { font-size: 10px; color: var(--blue); margin-top: 4px; }
+.badge {
+  position: absolute;
+  top: 12px; right: 12px;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 99px;
+  letter-spacing: .04em;
+}
+.badge-soon { background: #FEF3C7; color: #92400E; }
+.badge-live { background: #DCFCE7; color: #166534; }
+.badge-wip  { background: #EDE9FE; color: #5B21B6; }
+
+/* -- footer -- */
+.site-footer {
+  margin-top: 1rem;
+  font-size: 11px;
+  color: var(--text3);
+  text-align: center;
+  line-height: 2;
+}
+.site-footer a { color: var(--text3); text-decoration: none; }
+.site-footer a:hover { color: var(--text2); }
+
+/* -- privacy accordion -- */
+.privacy {
+  margin-top: 1.5rem;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface2);
+  box-shadow: 0 2px 0 var(--border);
+}
+.privacy-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-family: var(--font);
+  font-size: 10px;
+  text-align: left;
+  padding: 10px 14px;
+  cursor: pointer;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+}
+.privacy-btn:hover { color: var(--text2); }
+.privacy-body {
+  display: none;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.9;
+}
+.privacy-body.open { display: block; }
+.privacy-body h4 { color: var(--text); font-size: 12px; margin: 12px 0 3px; }
+.privacy-body h4:first-child { margin-top: 0; }
+.privacy-body a { color: var(--blue); }
+.privacy-body code { color: var(--orange); }
+
+/* toast */
+.toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem;
+  background: var(--text); color: #fff;
+  font-family: var(--font); font-size: 12px;
+  padding: 10px 18px; border-radius: 10px;
+  opacity: 0; transform: translateY(8px);
+  transition: opacity .2s, transform .2s;
+  pointer-events: none; z-index: 9999;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="logo" href="/">tkfatty<span>.</span>app</a>
+    <nav class="nav">
+      <a class="nav-link" href="/">network info</a>
+      <a class="nav-link" href="/portfolio/">portfolio</a>
+      <a class="nav-link" href="/tools/">tools</a>
+      <a class="nav-link ext" href="https://blob.tkfatty.app" target="_blank">blob</a>
+    </nav>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- IP Info Card -->
+  <div class="ip-card">
+    <div class="ip-card-header">
+      <span class="ip-card-title">// network info</span>
+      <button class="ip-refresh" onclick="load()">&#8635; refresh</button>
+    </div>
+
+    <div class="ip-grid">
+      <div class="ip-row">
+        <span class="ip-label">ip</span>
+        <span class="ip-value accent pending" id="ip">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">hostname</span>
+        <span class="ip-value pending" id="hostname">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">city</span>
+        <span class="ip-value pending" id="city">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">region</span>
+        <span class="ip-value pending" id="region">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">country</span>
+        <span class="ip-value pending" id="country">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">org (isp)</span>
+        <span class="ip-value pending" id="org">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">timezone (server)</span>
+        <span class="ip-value pending" id="timezone">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">local ip (webrtc)</span>
+        <span class="ip-value accent pending" id="local-ip">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">connection</span>
+        <span class="ip-value pending" id="conn-type">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">downlink</span>
+        <span class="ip-value pending" id="downlink">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">rtt</span>
+        <span class="ip-value pending" id="rtt">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">save-data</span>
+        <span class="ip-value pending" id="save-data">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">gpu vendor</span>
+        <span class="ip-value pending" id="gpu-vendor">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">gpu renderer</span>
+        <span class="ip-value pending" id="gpu-renderer">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">cpu cores</span>
+        <span class="ip-value pending" id="cpu-cores">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">memory</span>
+        <span class="ip-value pending" id="memory">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">battery</span>
+        <span class="ip-value pending" id="battery-level">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">charging</span>
+        <span class="ip-value pending" id="battery-charging">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">screen</span>
+        <span class="ip-value pending" id="resolution">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">device pixel ratio</span>
+        <span class="ip-value pending" id="dpr">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">color depth</span>
+        <span class="ip-value pending" id="color-depth">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">hdr</span>
+        <span class="ip-value pending" id="hdr">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">touch points</span>
+        <span class="ip-value pending" id="touch-points">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">dark mode</span>
+        <span class="ip-value pending" id="dark-mode">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">language</span>
+        <span class="ip-value pending" id="lang">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">platform</span>
+        <span class="ip-value pending" id="platform">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">architecture</span>
+        <span class="ip-value pending" id="arch">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">timezone (client)</span>
+        <span class="ip-value pending" id="tz-client">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">cookies</span>
+        <span class="ip-value pending" id="cookies">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">do not track</span>
+        <span class="ip-value pending" id="dnt">&#x2014;</span>
+      </div>
+      <div class="ip-row">
+        <span class="ip-label">user-agent</span>
+        <span class="ip-value pending" id="ua" style="font-size:11px">&#x2014;</span>
+      </div>
+      <div class="ip-row"><!-- padding --></div>
+    </div>
+
+    <div class="fp-section">
+      <div class="ip-card-header" style="border-bottom:1px solid var(--border)">
+        <span class="ip-card-title">// fingerprint</span>
+      </div>
+      <div class="fp-grid">
+        <div class="fp-row">
+          <span class="ip-label">canvas hash</span>
+          <span class="ip-value pending" id="canvas-fp" style="color:var(--green)">&#x2014;</span>
+        </div>
+        <div class="fp-row">
+          <span class="ip-label">audio hash</span>
+          <span class="ip-value pending" id="audio-fp" style="color:var(--green)">&#x2014;</span>
+        </div>
+        <div class="fp-row">
+          <span class="ip-label">detected fonts</span>
+          <span class="ip-value pending" id="fonts" style="color:var(--green);font-size:11px">&#x2014;</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site navigation -->
+  <div class="section-hdr">// tkfatty.app</div>
+  <div class="nav-cards">
+    <a class="nav-card" href="https://blob.tkfatty.app" target="_blank">
+      <span class="badge badge-live">live</span>
+      <div class="nav-card-icon">&#128193;</div>
+      <div class="nav-card-title">blob storage</div>
+      <div class="nav-card-desc">personal cloud storage with sharing and album features</div>
+      <div class="nav-card-url">blob.tkfatty.app</div>
+    </a>
+    <a class="nav-card disabled" href="/tools/">
+      <span class="badge badge-wip">wip</span>
+      <div class="nav-card-icon">&#128295;</div>
+      <div class="nav-card-title">tools</div>
+      <div class="nav-card-desc">web tools: IoC defanger, text utilities, and more</div>
+      <div class="nav-card-url">tkfatty.app/tools/</div>
+    </a>
+    <a class="nav-card disabled" href="/portfolio/">
+      <span class="badge badge-soon">soon</span>
+      <div class="nav-card-icon">&#128196;</div>
+      <div class="nav-card-title">portfolio</div>
+      <div class="nav-card-desc">infrastructure engineering projects and write-ups</div>
+      <div class="nav-card-url">tkfatty.app/portfolio/</div>
+    </a>
+  </div>
+
+  <!-- Privacy -->
+  <div class="privacy">
+    <button class="privacy-btn" onclick="togglePrivacy()">
+      <span>// privacy policy</span>
+      <span id="pp-arrow">[ + ]</span>
+    </button>
+    <div class="privacy-body" id="pp-body">
+      <h4>??????????????????</h4>
+      ?????????????????????????????????????????????????????????????????????????????????????????????IP?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+
+      <h4>??????????????????????????????</h4>
+      ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+
+      <h4>???????????????????????????????????????</h4>
+      Canvas API ????????? Web Audio API ?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+
+      <h4>?????????????????????????????????</h4>
+      IP?????????????????????????????? <a href="https://ipinfo.io" target="_blank">ipinfo.io</a> ?????????????????????????????????????????????????????????????????????IP???????????????ipinfo.io???????????????????????????????????????
+
+      <h4>WebRTC????????????</h4>
+      ????????????IP???????????????????????? WebRTC (<code>RTCPeerConnection</code>) ????????????????????????????????????????????????????????????
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div id="footer-ts">&#x2014;</div>
+    <div>tkfatty.app &nbsp;&middot;&nbsp;
+      <a href="https://blob.tkfatty.app">blob</a> &nbsp;&middot;&nbsp;
+      <a href="/tools/">tools</a> &nbsp;&middot;&nbsp;
+      <a href="/portfolio/">portfolio</a>
+    </div>
+  </footer>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  function set(id, val, extra) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = (val !== null && val !== undefined && val !== '') ? val : '???';
+    el.classList.remove('pending');
+    if (extra) el.style.cssText += extra;
   }
-  var arr = new Uint8Array(4);
-  crypto.getRandomValues(arr);
-  return candidates[0] + Array.from(arr, function(b){return b.toString(16).padStart(2,'0');}).join('').substring(0,6);
-}
 
-var HTML = [
-'<!DOCTYPE html>',
-'<html lang="ja">',
-'<head>',
-'<meta charset="UTF-8">',
-'<meta name="viewport" content="width=device-width,initial-scale=1">',
-'<title>blob.tkfatty.app</title>',
-'<style>',
-':root{',
-'  --bg:#E8EAED;--surface:#F4F5F7;--surface2:#FFFFFF;--border:#C8CBD0;',
-'  --text:#1A1C1E;--text2:#5A5D63;--text3:#9EA3AB;',
-'  --red:#D93025;--red-dk:#A52119;',
-'  --yellow:#F5C518;--yellow-dk:#B8900A;',
-'  --blue:#2B5BE0;--blue-dk:#1B3FA0;',
-'  --green:#2A9E52;--green-dk:#1A6E38;',
-'  --orange:#E8710A;--orange-dk:#B35508;',
-'  --purple:#7C3AED;--purple-dk:#5B21B6;',
-'  --font:"DM Mono","Courier New",Courier,monospace;',
-'}',
-'*{margin:0;padding:0;box-sizing:border-box}',
-'body{background-color:var(--bg);background-image:radial-gradient(circle,#B8BCC4 1px,transparent 1px);',
-'  background-size:28px 28px;color:var(--text);font-family:var(--font);font-size:13px;min-height:100vh;padding:2.5rem 1.25rem}',
-'.wrap{max-width:980px;margin:0 auto}',
-'.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;',
-'  background:var(--surface2);border:1.5px solid var(--border);border-radius:14px;',
-'  padding:14px 20px;box-shadow:0 2px 0 var(--border)}',
-'.hdr-logo{font-size:15px;font-weight:500;letter-spacing:.04em}',
-'.hdr-logo span{color:var(--blue)}',
-'.hdr-user{font-size:11px;color:var(--text3);background:var(--bg);border:1px solid var(--border);border-radius:99px;padding:3px 12px}',
-'.tabs{display:flex;gap:6px;margin-bottom:1.25rem}',
-'.tab{font-family:var(--font);font-size:12px;font-weight:500;padding:8px 18px;',
-'  border-radius:9px;border:1.5px solid var(--border);background:var(--surface2);',
-'  color:var(--text2);cursor:pointer;transition:all .12s;letter-spacing:.03em;box-shadow:0 3px 0 var(--border)}',
-'.tab:hover{color:var(--text);border-color:var(--text3)}',
-'.tab.active{background:var(--text);color:#fff;border-color:var(--text);box-shadow:0 3px 0 #000}',
-'.tab:active{transform:translateY(2px);box-shadow:0 1px 0 var(--border)}',
-'.tab.active:active{box-shadow:0 1px 0 #000}',
-'.panel{display:none}.panel.active{display:block}',
-'.key{display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:12px;font-weight:500;',
-'  padding:7px 16px;border-radius:9px;border:none;cursor:pointer;user-select:none;',
-'  transition:transform .07s,box-shadow .07s;letter-spacing:.03em;white-space:nowrap}',
-'.key:active{transform:translateY(3px)!important}',
-'.key-yellow{background:var(--yellow);color:#3a2800;box-shadow:0 5px 0 var(--yellow-dk),0 6px 2px rgba(0,0,0,.18)}',
-'.key-yellow:hover{background:#fdd02a}',
-'.key-yellow:active{box-shadow:0 2px 0 var(--yellow-dk)}',
-'.key-blue{background:var(--blue);color:#fff;box-shadow:0 5px 0 var(--blue-dk),0 6px 2px rgba(0,0,0,.18)}',
-'.key-blue:hover{background:#3d6ef5}',
-'.key-blue:active{box-shadow:0 2px 0 var(--blue-dk)}',
-'.key-green{background:var(--green);color:#fff;box-shadow:0 5px 0 var(--green-dk),0 6px 2px rgba(0,0,0,.18)}',
-'.key-green:hover{background:#35b562}',
-'.key-green:active{box-shadow:0 2px 0 var(--green-dk)}',
-'.key-red{background:var(--red);color:#fff;box-shadow:0 5px 0 var(--red-dk),0 6px 2px rgba(0,0,0,.18)}',
-'.key-red:hover{background:#e84336}',
-'.key-red:active{box-shadow:0 2px 0 var(--red-dk)}',
-'.key-orange{background:var(--orange);color:#fff;box-shadow:0 5px 0 var(--orange-dk),0 6px 2px rgba(0,0,0,.18)}',
-'.key-orange:hover{background:#f5830f}',
-'.key-orange:active{box-shadow:0 2px 0 var(--orange-dk)}',
-'.key-purple{background:var(--purple);color:#fff;box-shadow:0 5px 0 var(--purple-dk),0 6px 2px rgba(0,0,0,.18)}',
-'.key-purple:hover{background:#8b5cf6}',
-'.key-purple:active{box-shadow:0 2px 0 var(--purple-dk)}',
-'.key-gray{background:var(--surface2);color:var(--text2);box-shadow:0 5px 0 var(--border),0 6px 2px rgba(0,0,0,.10);border:1.5px solid var(--border)}',
-'.key-gray:hover{background:var(--surface);color:var(--text)}',
-'.key-gray:active{box-shadow:0 2px 0 var(--border)}',
-'.key-sm{padding:4px 10px;font-size:11px;border-radius:7px}',
-'.drop{background:var(--surface2);border:2px dashed var(--border);border-radius:14px;',
-'  padding:2rem;text-align:center;font-size:12px;color:var(--text3);',
-'  margin-bottom:1.25rem;cursor:pointer;transition:border-color .15s,background .15s,color .15s}',
-'.drop:hover,.drop.over{border-color:var(--blue);background:#EEF2FF;color:var(--blue)}',
-'#file-input{display:none}',
-'.toolbar{display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap}',
-'.search-wrap{display:flex;align-items:center;background:var(--surface2);border:1.5px solid var(--border);',
-'  border-radius:9px;padding:0 10px;box-shadow:inset 0 2px 3px rgba(0,0,0,.05)}',
-'.search{background:none;border:none;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 0;outline:none;width:180px}',
-'.search::placeholder{color:var(--text3)}',
-'.sel-info{font-size:11px;color:var(--text3)}',
-'.progress{height:3px;background:var(--border);border-radius:2px;margin-bottom:1.25rem;overflow:hidden}',
-'.progress-bar{height:100%;width:0;background:var(--blue);border-radius:2px;transition:width .2s}',
-'.table-card{background:var(--surface2);border:1.5px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 2px 0 var(--border)}',
-'.table-card-scroll{background:var(--surface2);border:1.5px solid var(--border);border-radius:14px;overflow-x:auto;box-shadow:0 2px 0 var(--border)}',
-'table{width:100%;border-collapse:collapse}',
-'thead{background:var(--bg)}',
-'th{font-size:10px;font-weight:500;color:var(--text3);text-align:left;padding:10px 14px;',
-'  border-bottom:1.5px solid var(--border);letter-spacing:.08em;text-transform:uppercase;',
-'  cursor:pointer;user-select:none;white-space:nowrap}',
-'th:hover{color:var(--text)}',
-'td{padding:9px 14px;border-bottom:1px solid #F0F1F3;vertical-align:middle}',
-'tr:last-child td{border-bottom:none}',
-'tr:hover td{background:#F7F8FA}',
-'.file-icon{font-size:16px;margin-right:8px}',
-'.fname{color:var(--text);word-break:break-word;overflow-wrap:anywhere;cursor:pointer;font-size:13px}',
-'.fname:hover{color:var(--blue);text-decoration:underline}',
-'.fname.previewable{color:var(--blue);font-weight:500}',
-'.fsize,.fdate,.ftoken{color:var(--text3);white-space:nowrap;font-size:12px}',
-'.ftoken{font-size:11px;color:var(--blue)}',
-'.actions{display:flex;gap:5px;justify-content:flex-end;align-items:center;flex-wrap:nowrap}',
-'.badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:99px;font-weight:500}',
-'.badge-on{background:#DCFCE7;color:#166534}',
-'.badge-off{background:#FEE2E2;color:#991B1B}',
-'.badge-exp{background:#FEF3C7;color:#92400E}',
-'.empty{text-align:center;padding:4rem;color:var(--text3);font-size:13px}',
-'.total-label{font-size:11px;color:var(--text3)}',
-'.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--text);color:#fff;',
-'  font-family:var(--font);font-size:12px;padding:10px 18px;border-radius:10px;',
-'  opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:10000}',
-'.toast.show{opacity:1;transform:translateY(0)}',
-'.modal-bg{display:none;position:fixed;inset:0;background:rgba(20,22,26,.82);',
-'  backdrop-filter:blur(4px);z-index:20000;align-items:center;justify-content:center;',
-'  flex-direction:column;gap:1rem;padding:1.5rem}',
-'.modal-bg.open{display:flex}',
-'.modal-card{background:var(--surface2);border:1.5px solid var(--border);border-radius:16px;',
-'  padding:14px 18px;display:flex;align-items:center;gap:1rem;',
-'  width:100%;max-width:90vw;box-shadow:0 4px 0 var(--border)}',
-'.modal-name{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-'.modal-inner{max-width:90vw;max-height:78vh;display:flex;align-items:center;justify-content:center}',
-'.modal-inner img{max-width:88vw;max-height:76vh;object-fit:contain;border-radius:10px}',
-'.modal-inner video{max-width:88vw;max-height:76vh;border-radius:10px;background:#000}',
-'.modal-inner audio{width:480px;max-width:88vw}',
-'.modal-inner iframe{width:88vw;height:76vh;border-radius:8px;border:none;background:#fff}',
-'.loading-msg{color:var(--text3);font-size:13px;padding:4rem}',
-'.dialog{background:var(--surface2);border:1.5px solid var(--border);border-radius:16px;',
-'  padding:1.5rem;max-width:500px;width:100%;box-shadow:0 4px 0 var(--border)}',
-'.dialog h3{font-size:13px;font-weight:500;margin-bottom:.5rem}',
-'.dialog-sub{font-size:12px;color:var(--text3);margin-bottom:1.25rem;word-break:break-all}',
-'label.fl{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:4px;margin-top:.85rem}',
-'label.fl:first-of-type{margin-top:0}',
-'.fi{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;',
-'  padding:8px 12px;font-family:var(--font);font-size:12px;color:var(--text);outline:none}',
-'.fi:focus{border-color:var(--blue)}',
-'.fi-row{display:flex;gap:.75rem;margin-top:.85rem}',
-'.fi-row .fi-wrap{flex:1}',
-'.dialog-actions{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.25rem}',
-'.slug-hint{font-size:10px;color:var(--text3);margin-top:4px}',
-'.section-hdr{font-size:11px;font-weight:500;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;',
-'  margin:1.75rem 0 .75rem;padding-bottom:4px;border-bottom:1px solid var(--border)}',
-// analytics
-'.analytics-section{margin-bottom:1.5rem}',
-'.stat-cards{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap}',
-'.stat-card{flex:1;min-width:130px;background:var(--surface2);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:0 2px 0 var(--border)}',
-'.stat-num{font-size:24px;font-weight:500;color:var(--text);line-height:1}',
-'.stat-label{font-size:11px;color:var(--text3);margin-top:4px;letter-spacing:.04em}',
-'.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.5rem}',
-'@media(max-width:600px){.charts-row{grid-template-columns:1fr}}',
-'.chart-card{background:var(--surface2);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:0 2px 0 var(--border)}',
-'.chart-title{font-size:11px;font-weight:500;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}',
-'.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}',
-'.bar-label{font-size:11px;color:var(--text2);min-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-'.bar-track{flex:1;background:var(--bg);border-radius:3px;height:8px;overflow:hidden}',
-'.bar-fill{height:100%;border-radius:3px;background:var(--blue);transition:width .4s}',
-'.bar-count{font-size:11px;color:var(--text3);min-width:28px;text-align:right}',
-'.activity-feed{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto}',
-'.feed-item{display:flex;gap:10px;align-items:flex-start;padding:8px 12px;background:var(--bg);border-radius:8px;font-size:12px}',
-'.feed-dot{width:8px;height:8px;border-radius:50%;background:var(--blue);margin-top:4px;flex-shrink:0}',
-'.feed-dot.preview{background:var(--green)}',
-'.feed-time{font-size:11px;color:var(--text3);white-space:nowrap}',
-'.feed-token{color:var(--blue);font-weight:500}',
-'.logs-wrap{max-height:55vh;overflow-y:auto;margin-top:1rem}',
-'.log-row td{font-size:11px}',
-'.log-ip{color:var(--text2)}',
-'.log-type-preview{color:var(--green);font-size:10px}',
-'.log-type-dl{color:var(--blue);font-size:10px}',
-'.log-ua{color:var(--text3);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-'@media(max-width:620px){',
-'  .col-mob-hide{display:none!important}',
-'  .mob-hide{display:none!important}',
-'  .fname{max-width:calc(100vw - 210px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}',
-'  .key-sm{padding:5px 10px;font-size:11px}',
-'  td,th{padding:8px 8px}',
-'}',
-'</style>',
-'</head>',
-'<body>',
-'<div class="wrap">',
-'  <div class="hdr">',
-'    <div class="hdr-logo">blob<span>.</span>tkfatty<span>.</span>app</div>',
-'    <div class="hdr-user" id="user-email">...</div>',
-'  </div>',
-'  <div class="tabs">',
-'    <button class="tab active" data-tab="files">files</button>',
-'    <button class="tab" data-tab="shares">shared links</button>',
-'  </div>',
-
-// FILES PANEL
-'  <div class="panel active" id="panel-files">',
-'    <div class="drop" id="drop-zone">drop files here &mdash; or click to select</div>',
-'    <input type="file" id="file-input" multiple>',
-'    <div class="progress"><div class="progress-bar" id="prog"></div></div>',
-'    <div class="toolbar">',
-'      <button class="key key-yellow" id="btn-upload">&#8679; upload</button>',
-'      <button class="key key-blue" id="btn-refresh">&#8635; refresh</button>',
-'      <button class="key key-red" id="del-sel-btn" style="display:none">&#10005; delete selected</button>',
-'      <button class="key key-green" id="album-sel-btn" style="display:none">&#9638; album</button>',
-'      <div class="search-wrap"><input class="search" id="search" placeholder="filter..."></div>',
-'      <span class="sel-info" id="sel-bar"></span>',
-'      <span style="flex:1"></span>',
-'      <span class="total-label" id="total-label"></span>',
-'    </div>',
-'    <div class="table-card-scroll">',
-'      <table style="min-width:640px">',
-'        <thead><tr>',
-'          <th style="width:32px"><input type="checkbox" id="chk-all"></th>',
-'          <th id="th-name">name</th>',
-'          <th id="th-type">type</th>',
-'          <th id="th-size">size</th>',
-'          <th id="th-date" class="col-mob-hide">uploaded</th>',
-'          <th></th>',
-'        </tr></thead>',
-'        <tbody id="tbody"></tbody>',
-'      </table>',
-'      <div class="empty" id="empty" style="display:none">no files yet</div>',
-'    </div>',
-'  </div>',
-
-// SHARES PANEL
-'  <div class="panel" id="panel-shares">',
-'    <div class="analytics-section" id="analytics-section">',
-'      <div class="stat-cards" id="stat-cards">',
-'        <div class="stat-card"><div class="stat-num" id="stat-total-links">-</div><div class="stat-label">total links</div></div>',
-'        <div class="stat-card"><div class="stat-num" id="stat-active-links">-</div><div class="stat-label">active links</div></div>',
-'        <div class="stat-card"><div class="stat-num" id="stat-total-dl">-</div><div class="stat-label">total accesses</div></div>',
-'        <div class="stat-card"><div class="stat-num" id="stat-today-dl">-</div><div class="stat-label">accesses today</div></div>',
-'      </div>',
-'      <div class="charts-row">',
-'        <div class="chart-card"><div class="chart-title">country distribution</div><div id="chart-country"></div></div>',
-'        <div class="chart-card"><div class="chart-title">browser distribution</div><div id="chart-ua"></div></div>',
-'      </div>',
-'      <div class="chart-card" style="margin-bottom:1.25rem">',
-'        <div class="chart-title">recent activity</div>',
-'        <div class="activity-feed" id="feed"></div>',
-'      </div>',
-'    </div>',
-
-'    <div class="section-hdr">shared files</div>',
-'    <div class="toolbar"><button class="key key-blue" id="btn-refresh-shares">&#8635; refresh</button></div>',
-'    <div class="table-card-scroll">',
-'      <table style="min-width:820px">',
-'        <thead><tr>',
-'          <th>token</th><th>file</th><th>label</th>',
-'          <th>created</th><th>status</th><th>accesses</th><th>limit</th><th>expires</th>',
-'          <th></th>',
-'        </tr></thead>',
-'        <tbody id="shares-tbody"></tbody>',
-'      </table>',
-'      <div class="empty" id="shares-empty" style="display:none">no shared links yet</div>',
-'    </div>',
-
-'    <div class="section-hdr">albums</div>',
-'    <div class="toolbar"><button class="key key-blue" id="btn-refresh-albums">&#8635; refresh</button></div>',
-'    <div class="table-card-scroll">',
-'      <table style="min-width:700px">',
-'        <thead><tr>',
-'          <th>token</th><th>label</th><th>files</th>',
-'          <th>created</th><th>status</th><th>visits</th><th>limit</th><th>expires</th>',
-'          <th></th>',
-'        </tr></thead>',
-'        <tbody id="albums-tbody"></tbody>',
-'      </table>',
-'      <div class="empty" id="albums-empty" style="display:none">no albums yet</div>',
-'    </div>',
-'  </div>',
-'</div>',
-
-// preview modal
-'<div class="modal-bg" id="modal-bg">',
-'  <div class="modal-card">',
-'    <span class="modal-name" id="modal-name"></span>',
-'    <button class="key key-sm key-blue" id="modal-dl-btn">&#8595; dl</button>',
-'    <button class="key key-sm key-gray" id="modal-close-btn">&#10005; close</button>',
-'  </div>',
-'  <div class="modal-inner" id="modal-inner"><span class="loading-msg">loading...</span></div>',
-'</div>',
-
-// share dialog
-'<div class="modal-bg" id="share-bg">',
-'  <div class="dialog">',
-'    <h3>create share link</h3>',
-'    <div class="dialog-sub" id="share-fname"></div>',
-'    <label class="fl">custom slug (optional)</label>',
-'    <input class="fi" id="share-slug" type="text" placeholder="leave blank for yojijukugo ID">',
-'    <div class="slug-hint" id="slug-preview"></div>',
-'    <label class="fl">label (optional)</label>',
-'    <input class="fi" id="share-label" type="text" placeholder="e.g. for Alice">',
-'    <label class="fl">password (optional)</label>',
-'    <input class="fi" id="share-password" type="password">',
-'    <div class="fi-row">',
-'      <div class="fi-wrap"><label class="fl">download limit</label><input class="fi" id="share-maxdl" type="number" min="1" placeholder="unlimited"></div>',
-'      <div class="fi-wrap"><label class="fl">expires</label><input class="fi" id="share-expires" type="date"></div>',
-'    </div>',
-'    <div class="dialog-actions">',
-'      <button class="key key-gray" id="share-cancel">cancel</button>',
-'      <button class="key key-green" id="share-confirm">create link</button>',
-'    </div>',
-'  </div>',
-'</div>',
-
-// album dialog
-'<div class="modal-bg" id="album-bg">',
-'  <div class="dialog">',
-'    <h3>create album</h3>',
-'    <div class="dialog-sub" id="album-files-preview"></div>',
-'    <label class="fl">custom slug (optional)</label>',
-'    <input class="fi" id="album-slug" type="text" placeholder="leave blank for yojijukugo ID">',
-'    <div class="slug-hint" id="album-slug-preview"></div>',
-'    <label class="fl">album label</label>',
-'    <input class="fi" id="album-label" type="text" placeholder="e.g. Trip Photos">',
-'    <label class="fl">password (optional)</label>',
-'    <input class="fi" id="album-password" type="password">',
-'    <div class="fi-row">',
-'      <div class="fi-wrap"><label class="fl">visit limit</label><input class="fi" id="album-maxdl" type="number" min="1" placeholder="unlimited"></div>',
-'      <div class="fi-wrap"><label class="fl">expires</label><input class="fi" id="album-expires" type="date"></div>',
-'    </div>',
-'    <div class="dialog-actions">',
-'      <button class="key key-gray" id="album-cancel">cancel</button>',
-'      <button class="key key-green" id="album-confirm">create album</button>',
-'    </div>',
-'  </div>',
-'</div>',
-
-// edit share dialog
-'<div class="modal-bg" id="edit-bg">',
-'  <div class="dialog">',
-'    <h3>edit share link</h3>',
-'    <div class="dialog-sub" id="edit-token"></div>',
-'    <input type="hidden" id="edit-token-val">',
-'    <input type="hidden" id="edit-kind-val">',
-'    <label class="fl">label</label>',
-'    <input class="fi" id="edit-label" type="text">',
-'    <label class="fl">new password (blank = keep)</label>',
-'    <input class="fi" id="edit-password" type="password">',
-'    <label class="fl">clear password</label>',
-'    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-top:4px">',
-'      <input type="checkbox" id="edit-clear-pw"> remove password protection',
-'    </label>',
-'    <div class="fi-row">',
-'      <div class="fi-wrap"><label class="fl">limit</label><input class="fi" id="edit-maxdl" type="number" min="1" placeholder="unlimited"></div>',
-'      <div class="fi-wrap"><label class="fl">expires</label><input class="fi" id="edit-expires" type="date"></div>',
-'    </div>',
-'    <div class="dialog-actions">',
-'      <button class="key key-gray" id="edit-cancel">cancel</button>',
-'      <button class="key key-blue" id="edit-confirm">save</button>',
-'    </div>',
-'  </div>',
-'</div>',
-
-// logs dialog
-'<div class="modal-bg" id="logs-bg">',
-'  <div class="dialog" style="max-width:700px;width:100%">',
-'    <h3 id="logs-title">access logs</h3>',
-'    <div class="dialog-sub" id="logs-sub"></div>',
-'    <div class="logs-wrap">',
-'      <div class="table-card">',
-'        <table>',
-'          <thead><tr><th>time</th><th>type</th><th>ip</th><th>country</th><th>user agent</th></tr></thead>',
-'          <tbody id="logs-tbody"></tbody>',
-'        </table>',
-'        <div class="empty" id="logs-empty" style="display:none">no access logs yet</div>',
-'      </div>',
-'    </div>',
-'    <div class="dialog-actions" style="margin-top:1rem">',
-'      <button class="key key-gray" id="logs-close">close</button>',
-'    </div>',
-'  </div>',
-'</div>',
-
-'<div class="toast" id="toast"></div>',
-
-'<script>',
-'(function(){',
-'var files=[],sortKey="date",sortDir=-1,selected=new Set();',
-'var currentKey=null,currentObjUrl=null,shareTargetKey=null;',
-
-'var ICONS={jpg:"&#128444;",jpeg:"&#128444;",png:"&#128444;",gif:"&#128444;",webp:"&#128444;",svg:"&#128444;",',
-'  pdf:"&#128196;",txt:"&#128221;",md:"&#128221;",csv:"&#128202;",doc:"&#128196;",docx:"&#128196;",',
-'  xls:"&#128202;",xlsx:"&#128202;",ppt:"&#128202;",pptx:"&#128202;",js:"&#128220;",ts:"&#128220;",',
-'  html:"&#128220;",css:"&#128220;",json:"&#128220;",py:"&#128220;",sh:"&#128220;",',
-'  zip:"&#128736;",gz:"&#128736;",tar:"&#128736;",',
-'  mp4:"&#127916;",webm:"&#127916;",mov:"&#127916;",mp3:"&#127925;",wav:"&#127925;",ogg:"&#127925;",flac:"&#127925;"};',
-
-'var IMG=["jpg","jpeg","png","gif","webp","svg"];',
-'var VID=["mp4","webm","ogg","mov"];',
-'var AUD=["mp3","wav","flac"];',
-'var PDF=["pdf"];',
-
-'function getExt(k){return(k.split(".").pop()||"").toLowerCase();}',
-'function canPreview(k){var e=getExt(k);return IMG.indexOf(e)>=0||VID.indexOf(e)>=0||AUD.indexOf(e)>=0||PDF.indexOf(e)>=0;}',
-'function fileIcon(k){return ICONS[getExt(k)]||"&#128193;";}',
-'function fmt(b){if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";if(b<1073741824)return(b/1048576).toFixed(1)+" MB";return(b/1073741824).toFixed(2)+" GB";}',
-'function fmtDate(iso){var d=new Date(typeof iso==="number"?iso*1000:iso);return d.toLocaleDateString("ja-JP")+" "+d.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});}',
-'function fmtDateOnly(ts){if(!ts)return"&mdash;";return new Date(ts*1000).toLocaleDateString("ja-JP");}',
-'function esc(s){return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");}',
-'function toast(msg,dur){var el=document.getElementById("toast");el.textContent=msg;el.classList.add("show");setTimeout(function(){el.classList.remove("show");},dur||2500);}',
-
-// tabs
-'document.querySelectorAll(".tab").forEach(function(tab){',
-'  tab.addEventListener("click",function(){',
-'    document.querySelectorAll(".tab").forEach(function(t){t.classList.remove("active");});',
-'    document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("active");});',
-'    tab.classList.add("active");',
-'    document.getElementById("panel-"+tab.dataset.tab).classList.add("active");',
-'    if(tab.dataset.tab==="shares"){loadShares();loadAlbums();loadAnalytics();}',
-'  });',
-'});',
-
-'function setSort(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}',
-'  ["name","type","size","date"].forEach(function(n){var el=document.getElementById("th-"+n);if(el)el.textContent={name:"name",type:"type",size:"size",date:"uploaded"}[n]+(n===sortKey?(sortDir===1?" ^":" v"):"");});',
-'  renderTable();}',
-
-'function renderTable(){',
-'  var q=document.getElementById("search").value.toLowerCase();',
-'  var list=files.filter(function(f){return f.key.toLowerCase().indexOf(q)>=0;});',
-'  list.sort(function(a,b){',
-'    if(sortKey==="name")return sortDir*a.key.localeCompare(b.key);',
-'    if(sortKey==="type"){var ea=getExt(a.key),eb=getExt(b.key);return sortDir*(ea<eb?-1:ea>eb?1:0);}',
-'    if(sortKey==="size")return sortDir*(a.size-b.size);',
-'    return sortDir*(new Date(a.uploaded)-new Date(b.uploaded));',
-'  });',
-'  var tbody=document.getElementById("tbody");',
-'  if(!list.length){tbody.innerHTML="";document.getElementById("empty").style.display="block";return;}',
-'  document.getElementById("empty").style.display="none";',
-'  var total=0;files.forEach(function(f){total+=f.size;});',
-'  document.getElementById("total-label").textContent=files.length+" files  "+fmt(total);',
-'  var rows=list.map(function(f){',
-'    var p=canPreview(f.key);var chk=selected.has(f.key)?" checked":"";',
-'    var nc="fname"+(p?" previewable":"");var act=p?"preview":"download";',
-'    var ext=getExt(f.key)||"&mdash;";',
-'    var pb=p?"<button class=\\"key key-sm key-green mob-hide\\" data-action=\\"preview\\" data-key=\\""+esc(f.key)+"\\">view</button>":"";',
-'    return "<tr>"',
-'      +"<td><input type=\\"checkbox\\" class=\\"row-chk\\" data-key=\\""+esc(f.key)+"\\""+chk+"></td>"',
-'      +"<td><span class=\\"file-icon\\">"+fileIcon(f.key)+"</span><span class=\\""+nc+"\\" data-action=\\""+act+"\\" data-key=\\""+esc(f.key)+"\\">"+esc(f.key)+"</span></td>"',
-'      +"<td class=\\"fsize\\" style=\\"color:var(--text3);font-size:11px\\">"+esc(ext)+"</td>"',
-'      +"<td class=\\"fsize\\">"+fmt(f.size)+"</td>"',
-'      +"<td class=\\"fdate col-mob-hide\\">"+fmtDate(f.uploaded)+"</td>"',
-'      +"<td class=\\"actions\\">"+pb',
-'      +"<button class=\\"key key-sm key-yellow\\" data-action=\\"share\\" data-key=\\""+esc(f.key)+"\\">share</button>"',
-'      +"<button class=\\"key key-sm key-blue\\" data-action=\\"download\\" data-key=\\""+esc(f.key)+"\\">dl</button>"',
-'      +"<button class=\\"key key-sm key-red\\" data-action=\\"del\\" data-key=\\""+esc(f.key)+"\\">x</button>"',
-'      +"</td></tr>";',
-'  });',
-'  tbody.innerHTML=rows.join("");updateSelBar();',
-'}',
-
-'function toggleAll(c){document.querySelectorAll(".row-chk").forEach(function(el){el.checked=c;c?selected.add(el.dataset.key):selected.delete(el.dataset.key);});updateSelBar();}',
-'function toggleSel(el){el.checked?selected.add(el.dataset.key):selected.delete(el.dataset.key);updateSelBar();}',
-'function updateSelBar(){',
-'  var n=selected.size;',
-'  document.getElementById("sel-bar").textContent=n?n+" selected":"";',
-'  document.getElementById("del-sel-btn").style.display=n?"":"none";',
-'  document.getElementById("album-sel-btn").style.display=n>=2?"":"none";',
-'}',
-
-'function load(){',
-'  fetch("/api/files").then(function(r){',
-'    if(!r.ok){toast("load failed: "+r.status);return null;}',
-'    var e=r.headers.get("X-User-Email");if(e)document.getElementById("user-email").textContent=e;',
-'    return r.json();',
-'  }).then(function(d){if(!d)return;files=d;selected.clear();renderTable();}).catch(function(e){toast("error: "+e.message);});',
-'}',
-
-// analytics
-'function renderBar(containerId,data,colorVar){',
-'  var el=document.getElementById(containerId);',
-'  if(!data||!data.length){el.innerHTML="<div style=\\"color:var(--text3);font-size:12px\\">no data yet</div>";return;}',
-'  var max=data[0].count;',
-'  el.innerHTML=data.slice(0,8).map(function(d){',
-'    var pct=max>0?Math.round(d.count/max*100):0;',
-'    return "<div class=\\"bar-row\\"><span class=\\"bar-label\\" title=\\""+esc(d.label)+"\\">"+esc(d.label||"unknown")+"</span><div class=\\"bar-track\\"><div class=\\"bar-fill\\" style=\\"width:"+pct+"%;background:"+(colorVar||"var(--blue)")+"\\"></div></div><span class=\\"bar-count\\">"+d.count+"</span></div>";',
-'  }).join("");',
-'}',
-
-'function loadAnalytics(){',
-'  fetch("/api/analytics").then(function(r){return r.json();}).then(function(d){',
-'    document.getElementById("stat-total-links").textContent=d.total_links||0;',
-'    document.getElementById("stat-active-links").textContent=d.active_links||0;',
-'    document.getElementById("stat-total-dl").textContent=d.total_accesses||0;',
-'    document.getElementById("stat-today-dl").textContent=d.today_accesses||0;',
-'    renderBar("chart-country",d.by_country,"var(--blue)");',
-'    renderBar("chart-ua",d.by_ua,"var(--green)");',
-'    var feed=document.getElementById("feed");',
-'    if(!d.recent||!d.recent.length){feed.innerHTML="<div class=\\"feed-item\\"><span style=\\"color:var(--text3);font-size:12px\\">no activity yet</span></div>";return;}',
-'    feed.innerHTML=d.recent.map(function(r){',
-'      var isP=r.ip&&r.ip.indexOf("preview:")===0;',
-'      var ip=isP?r.ip.replace("preview:",""):r.ip||"";',
-'      var dotCls=isP?"feed-dot preview":"feed-dot";',
-'      return "<div class=\\"feed-item\\"><div class=\\""+dotCls+"\\"></div><div style=\\"flex:1\\"><span class=\\"feed-token\\">"+esc(r.token)+"</span> <span style=\\"font-size:11px;color:var(--text3)\\">"+esc((r.file_key||"").split("/").pop())+"</span></div><span class=\\"feed-time\\">"+fmtDate(r.accessed_at)+"</span></div>";',
-'    }).join("");',
-'  }).catch(function(e){console.error("analytics",e);});',
-'}',
-
-'function loadShares(){',
-'  fetch("/api/shares").then(function(r){return r.json();}).then(function(data){',
-'    var tbody=document.getElementById("shares-tbody");',
-'    var now=Math.floor(Date.now()/1000);',
-'    if(!data||!data.length){tbody.innerHTML="";document.getElementById("shares-empty").style.display="block";return;}',
-'    document.getElementById("shares-empty").style.display="none";',
-'    var rows=data.map(function(s){',
-'      var expired=s.expires_at&&now>s.expires_at;var limitHit=s.max_downloads&&s.download_count>=s.max_downloads;',
-'      var badge=!s.active?"<span class=\\"badge badge-off\\">revoked</span>":expired?"<span class=\\"badge badge-exp\\">expired</span>":limitHit?"<span class=\\"badge badge-exp\\">limit</span>":"<span class=\\"badge badge-on\\">active</span>";',
-'      var actions="";',
-'      if(s.active&&!expired&&!limitHit)actions+="<button class=\\"key key-sm key-blue\\" data-action=\\"copy\\" data-url=\\""+esc("https://share.tkfatty.app/"+s.token)+"\\">copy</button>";',
-'      actions+="<button class=\\"key key-sm key-purple\\" data-action=\\"edit\\" data-kind=\\"share\\" data-share=\\""+esc(JSON.stringify(s))+"\\">edit</button>";',
-'      actions+="<button class=\\"key key-sm key-gray\\" data-action=\\"logs\\" data-token=\\""+esc(s.token)+"\\" data-key=\\""+esc(s.file_key)+"\\">logs</button>";',
-'      if(s.active)actions+="<button class=\\"key key-sm key-red\\" data-action=\\"revoke\\" data-kind=\\"share\\" data-token=\\""+esc(s.token)+"\\">revoke</button>";',
-'      var pw=s.has_password?"&#128274;":"";',
-'      return "<tr><td class=\\"ftoken\\">"+esc(s.token)+pw+"</td>"',
-'        +"<td class=\\"fdate\\" style=\\"max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\\">"+esc(s.file_key)+"</td>"',
-'        +"<td class=\\"fdate\\">"+esc(s.label||"&mdash;")+"</td><td class=\\"fdate\\">"+fmtDate(s.created_at)+"</td>"',
-'        +"<td>"+badge+"</td><td class=\\"fdate\\">"+s.download_count+"</td>"',
-'        +"<td class=\\"fdate\\">"+(s.max_downloads||"&mdash;")+"</td><td class=\\"fdate\\">"+fmtDateOnly(s.expires_at)+"</td>"',
-'        +"<td class=\\"actions\\">"+actions+"</td></tr>";',
-'    });',
-'    tbody.innerHTML=rows.join("");',
-'  }).catch(function(e){toast("error: "+e.message);});',
-'}',
-
-'function loadAlbums(){',
-'  fetch("/api/albums").then(function(r){return r.json();}).then(function(data){',
-'    var tbody=document.getElementById("albums-tbody");',
-'    var now=Math.floor(Date.now()/1000);',
-'    if(!data||!data.length){tbody.innerHTML="";document.getElementById("albums-empty").style.display="block";return;}',
-'    document.getElementById("albums-empty").style.display="none";',
-'    var rows=data.map(function(s){',
-'      var expired=s.expires_at&&now>s.expires_at;var limitHit=s.max_downloads&&s.visit_count>=s.max_downloads;',
-'      var badge=!s.active?"<span class=\\"badge badge-off\\">revoked</span>":expired?"<span class=\\"badge badge-exp\\">expired</span>":limitHit?"<span class=\\"badge badge-exp\\">limit</span>":"<span class=\\"badge badge-on\\">active</span>";',
-'      var actions="";',
-'      if(s.active&&!expired&&!limitHit)actions+="<button class=\\"key key-sm key-blue\\" data-action=\\"copy\\" data-url=\\""+esc("https://share.tkfatty.app/album/"+s.token)+"\\">copy</button>";',
-'      actions+="<button class=\\"key key-sm key-purple\\" data-action=\\"edit\\" data-kind=\\"album\\" data-share=\\""+esc(JSON.stringify(s))+"\\">edit</button>";',
-'      actions+="<button class=\\"key key-sm key-gray\\" data-action=\\"logs\\" data-token=\\""+esc(s.token)+"\\" data-key=\\"album\\">logs</button>";',
-'      if(s.active)actions+="<button class=\\"key key-sm key-red\\" data-action=\\"revoke\\" data-kind=\\"album\\" data-token=\\""+esc(s.token)+"\\">revoke</button>";',
-'      var pw=s.has_password?"&#128274;":"";',
-'      return "<tr><td class=\\"ftoken\\">"+esc(s.token)+pw+"</td>"',
-'        +"<td class=\\"fdate\\">"+esc(s.label||"&mdash;")+"</td>"',
-'        +"<td class=\\"fdate\\">"+s.file_count+"</td>"',
-'        +"<td class=\\"fdate\\">"+fmtDate(s.created_at)+"</td>"',
-'        +"<td>"+badge+"</td><td class=\\"fdate\\">"+s.visit_count+"</td>"',
-'        +"<td class=\\"fdate\\">"+(s.max_downloads||"&mdash;")+"</td><td class=\\"fdate\\">"+fmtDateOnly(s.expires_at)+"</td>"',
-'        +"<td class=\\"actions\\">"+actions+"</td></tr>";',
-'    });',
-'    tbody.innerHTML=rows.join("");',
-'  }).catch(function(e){toast("albums error: "+e.message);});',
-'}',
-
-// share dialog
-'function openShareDialog(key){',
-'  shareTargetKey=key;document.getElementById("share-fname").textContent=key;',
-'  ["share-slug","share-label","share-password","share-maxdl","share-expires"].forEach(function(id){document.getElementById(id).value="";});',
-'  document.getElementById("slug-preview").textContent="blank = auto yojijukugo ID";',
-'  document.getElementById("share-bg").classList.add("open");',
-'}',
-'function closeShareDialog(){document.getElementById("share-bg").classList.remove("open");shareTargetKey=null;}',
-'document.getElementById("share-slug").addEventListener("input",function(){',
-'  var v=this.value.trim();document.getElementById("slug-preview").textContent=v?"URL: https://share.tkfatty.app/"+v:"blank = auto yojijukugo ID";',
-'});',
-'function createShare(){',
-'  if(!shareTargetKey)return;',
-'  var exp=document.getElementById("share-expires").value;',
-'  var body={file_key:shareTargetKey,slug:document.getElementById("share-slug").value.trim()||null,label:document.getElementById("share-label").value.trim()||null,password:document.getElementById("share-password").value||null,max_downloads:document.getElementById("share-maxdl").value?parseInt(document.getElementById("share-maxdl").value):null,expires_at:exp?Math.floor(new Date(exp).getTime()/1000):null};',
-'  fetch("/api/shares",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})',
-'    .then(function(r){return r.json();})',
-'    .then(function(d){if(d.error){toast("error: "+d.error);return;}closeShareDialog();navigator.clipboard.writeText("https://share.tkfatty.app/"+d.token).catch(function(){});toast("created: "+d.token+" (copied!)");loadShares();loadAnalytics();}).catch(function(e){toast("error: "+e.message);});',
-'}',
-
-// album dialog
-'function openAlbumDialog(){',
-'  var keys=Array.from(selected);',
-'  document.getElementById("album-files-preview").textContent=keys.length+" files selected";',
-'  ["album-slug","album-label","album-password","album-maxdl","album-expires"].forEach(function(id){document.getElementById(id).value="";});',
-'  document.getElementById("album-slug-preview").textContent="blank = auto yojijukugo ID";',
-'  document.getElementById("album-bg").classList.add("open");',
-'}',
-'function closeAlbumDialog(){document.getElementById("album-bg").classList.remove("open");}',
-'document.getElementById("album-slug").addEventListener("input",function(){',
-'  var v=this.value.trim();document.getElementById("album-slug-preview").textContent=v?"URL: https://share.tkfatty.app/album/"+v:"blank = auto yojijukugo ID";',
-'});',
-'function createAlbum(){',
-'  var keys=Array.from(selected);if(keys.length<2){toast("select 2+ files");return;}',
-'  var exp=document.getElementById("album-expires").value;',
-'  var body={file_keys:keys,slug:document.getElementById("album-slug").value.trim()||null,label:document.getElementById("album-label").value.trim()||null,password:document.getElementById("album-password").value||null,max_downloads:document.getElementById("album-maxdl").value?parseInt(document.getElementById("album-maxdl").value):null,expires_at:exp?Math.floor(new Date(exp).getTime()/1000):null};',
-'  fetch("/api/albums",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})',
-'    .then(function(r){return r.json();})',
-'    .then(function(d){if(d.error){toast("error: "+d.error);return;}closeAlbumDialog();navigator.clipboard.writeText("https://share.tkfatty.app/album/"+d.token).catch(function(){});toast("album created: "+d.token+" (copied!)");loadAlbums();}).catch(function(e){toast("error: "+e.message);});',
-'}',
-
-// edit dialog (shared between shares and albums)
-'function openEditDialog(shareJson,kind){',
-'  var s=JSON.parse(shareJson);',
-'  document.getElementById("edit-token-val").value=s.token;',
-'  document.getElementById("edit-kind-val").value=kind||"share";',
-'  document.getElementById("edit-token").textContent=(kind==="album"?"album":"token")+": "+s.token;',
-'  document.getElementById("edit-label").value=s.label||"";',
-'  document.getElementById("edit-password").value="";',
-'  document.getElementById("edit-clear-pw").checked=false;',
-'  document.getElementById("edit-maxdl").value=s.max_downloads||"";',
-'  var exp="";if(s.expires_at){var d=new Date(s.expires_at*1000);exp=d.toISOString().split("T")[0];}',
-'  document.getElementById("edit-expires").value=exp;',
-'  document.getElementById("edit-bg").classList.add("open");',
-'}',
-'function closeEditDialog(){document.getElementById("edit-bg").classList.remove("open");}',
-'function saveEdit(){',
-'  var token=document.getElementById("edit-token-val").value;',
-'  var kind=document.getElementById("edit-kind-val").value;',
-'  var exp=document.getElementById("edit-expires").value;',
-'  var body={label:document.getElementById("edit-label").value.trim()||null,password:document.getElementById("edit-password").value||null,clear_password:document.getElementById("edit-clear-pw").checked,max_downloads:document.getElementById("edit-maxdl").value?parseInt(document.getElementById("edit-maxdl").value):null,expires_at:exp?Math.floor(new Date(exp).getTime()/1000):null};',
-'  var endpoint=kind==="album"?"/api/albums/"+token:"/api/shares/"+token;',
-'  fetch(endpoint,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})',
-'    .then(function(r){return r.json();})',
-'    .then(function(d){if(d.ok){closeEditDialog();toast("saved");if(kind==="album")loadAlbums();else loadShares();}else toast("error: "+(d.error||"unknown"));}).catch(function(e){toast("error: "+e.message);});',
-'}',
-
-// logs dialog
-'function openLogs(token,fileKey){',
-'  document.getElementById("logs-title").textContent="access logs";',
-'  document.getElementById("logs-sub").textContent=(fileKey==="album"?"album":"file")+": "+token;',
-'  document.getElementById("logs-tbody").innerHTML="<tr><td colspan=\\"5\\" style=\\"text-align:center;padding:1rem;color:var(--text3)\\">loading...</td></tr>";',
-'  document.getElementById("logs-empty").style.display="none";',
-'  document.getElementById("logs-bg").classList.add("open");',
-'  fetch("/api/logs/"+token).then(function(r){return r.json();}).then(function(rows){',
-'    if(!rows||!rows.length){document.getElementById("logs-tbody").innerHTML="";document.getElementById("logs-empty").style.display="block";return;}',
-'    var html=rows.map(function(r){',
-'      var isP=r.ip&&r.ip.indexOf("preview:")===0;',
-'      var ip=isP?r.ip.replace("preview:",""):r.ip||"";',
-'      var typeBadge=isP?"<span class=\\"log-type-preview\\">preview</span>":"<span class=\\"log-type-dl\\">dl</span>";',
-'      return "<tr class=\\"log-row\\"><td class=\\"fdate\\">"+fmtDate(r.accessed_at)+"</td><td>"+typeBadge+"</td><td class=\\"log-ip\\">"+esc(ip||"&mdash;")+"</td><td style=\\"color:var(--blue);font-size:11px\\">"+esc(r.country||"&mdash;")+"</td><td class=\\"log-ua\\" title=\\""+esc(r.user_agent||"")+"\\">"+esc((r.user_agent||"").substring(0,50))+"</td></tr>";',
-'    }).join("");',
-'    document.getElementById("logs-tbody").innerHTML=html;',
-'  }).catch(function(e){toast("error: "+e.message);});',
-'}',
-
-'function doDownload(key){fetch("/api/file/"+encodeURIComponent(key)).then(function(r){if(!r.ok){toast("download failed");return null;}return r.blob();}).then(function(b){if(!b)return;var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=key.split("/").pop();a.click();URL.revokeObjectURL(a.href);});}',
-'function doDelete(key){if(!confirm("Delete: "+key+"?"))return;fetch("/api/file/"+encodeURIComponent(key),{method:"DELETE"}).then(function(r){if(r.ok){toast("deleted");load();}else toast("delete failed");});}',
-'function deleteSelected(){if(!selected.size)return;if(!confirm("Delete "+selected.size+" file(s)?"))return;Promise.all(Array.from(selected).map(function(k){return fetch("/api/file/"+encodeURIComponent(k),{method:"DELETE"});})).then(function(){selected.clear();toast("deleted");load();});}',
-
-'function preview(key){',
-'  currentKey=key;var e=getExt(key);',
-'  var inner=document.getElementById("modal-inner");',
-'  document.getElementById("modal-name").textContent=key;inner.innerHTML="<span class=\\"loading-msg\\">loading...</span>";',
-'  document.getElementById("modal-bg").classList.add("open");document.body.style.overflow="hidden";',
-'  if(currentObjUrl){URL.revokeObjectURL(currentObjUrl);currentObjUrl=null;}',
-'  fetch("/api/file/"+encodeURIComponent(key)).then(function(r){if(!r.ok){inner.innerHTML="<span class=\\"loading-msg\\">failed ("+r.status+")</span>";return null;}return r.blob();}).then(function(blob){',
-'    if(!blob)return;var url=URL.createObjectURL(blob);currentObjUrl=url;inner.innerHTML="";var el;',
-'    if(IMG.indexOf(e)>=0){el=document.createElement("img");el.src=url;el.alt=key;}',
-'    else if(VID.indexOf(e)>=0){el=document.createElement("video");el.src=url;el.controls=true;}',
-'    else if(AUD.indexOf(e)>=0){el=document.createElement("audio");el.src=url;el.controls=true;}',
-'    else if(PDF.indexOf(e)>=0){el=document.createElement("iframe");el.src=url;el.title=key;}',
-'    if(el)inner.appendChild(el);',
-'  }).catch(function(err){inner.innerHTML="<span class=\\"loading-msg\\">error: "+err.message+"</span>";});',
-'}',
-'function closeModal(){document.getElementById("modal-bg").classList.remove("open");document.body.style.overflow="";var inner=document.getElementById("modal-inner");inner.querySelectorAll("video,audio").forEach(function(el){el.pause();el.src="";});inner.innerHTML="";if(currentObjUrl){URL.revokeObjectURL(currentObjUrl);currentObjUrl=null;}currentKey=null;}',
-
-'function upload(fileList){var prog=document.getElementById("prog");var chain=Promise.resolve();Array.from(fileList).forEach(function(file){chain=chain.then(function(){prog.style.width="30%";return fetch("/api/file/"+encodeURIComponent(file.name),{method:"PUT",body:file,headers:{"Content-Type":file.type||"application/octet-stream"}});}).then(function(r){prog.style.width=r.ok?"100%":"0%";toast(r.ok?"uploaded: "+file.name:"upload failed: "+file.name);});});chain.then(function(){setTimeout(function(){prog.style.width="0%";},600);load();});}',
-
-// events
-'document.getElementById("btn-upload").addEventListener("click",function(){document.getElementById("file-input").click();});',
-'document.getElementById("btn-refresh").addEventListener("click",load);',
-'document.getElementById("btn-refresh-shares").addEventListener("click",function(){loadShares();loadAnalytics();});',
-'document.getElementById("btn-refresh-albums").addEventListener("click",loadAlbums);',
-'document.getElementById("del-sel-btn").addEventListener("click",deleteSelected);',
-'document.getElementById("album-sel-btn").addEventListener("click",openAlbumDialog);',
-'document.getElementById("search").addEventListener("input",renderTable);',
-'document.getElementById("chk-all").addEventListener("change",function(){toggleAll(this.checked);});',
-'document.getElementById("modal-close-btn").addEventListener("click",closeModal);',
-'document.getElementById("modal-dl-btn").addEventListener("click",function(){if(currentKey)doDownload(currentKey);});',
-'document.getElementById("modal-bg").addEventListener("click",function(e){if(e.target===this)closeModal();});',
-'document.getElementById("share-cancel").addEventListener("click",closeShareDialog);',
-'document.getElementById("share-confirm").addEventListener("click",createShare);',
-'document.getElementById("share-bg").addEventListener("click",function(e){if(e.target===this)closeShareDialog();});',
-'document.getElementById("album-cancel").addEventListener("click",closeAlbumDialog);',
-'document.getElementById("album-confirm").addEventListener("click",createAlbum);',
-'document.getElementById("album-bg").addEventListener("click",function(e){if(e.target===this)closeAlbumDialog();});',
-'document.getElementById("edit-cancel").addEventListener("click",closeEditDialog);',
-'document.getElementById("edit-confirm").addEventListener("click",saveEdit);',
-'document.getElementById("edit-bg").addEventListener("click",function(e){if(e.target===this)closeEditDialog();});',
-'document.getElementById("logs-close").addEventListener("click",function(){document.getElementById("logs-bg").classList.remove("open");});',
-'document.getElementById("logs-bg").addEventListener("click",function(e){if(e.target===this)document.getElementById("logs-bg").classList.remove("open");});',
-'document.addEventListener("keydown",function(e){if(e.key==="Escape"){closeModal();closeShareDialog();closeAlbumDialog();closeEditDialog();document.getElementById("logs-bg").classList.remove("open");}});',
-
-'document.getElementById("tbody").addEventListener("click",function(e){var el=e.target.closest("[data-action]");if(!el)return;var action=el.dataset.action,key=el.dataset.key;if(action==="preview")preview(key);else if(action==="download")doDownload(key);else if(action==="del")doDelete(key);else if(action==="share")openShareDialog(key);});',
-'document.getElementById("tbody").addEventListener("change",function(e){if(e.target.classList.contains("row-chk"))toggleSel(e.target);});',
-
-'document.getElementById("shares-tbody").addEventListener("click",function(e){',
-'  var el=e.target.closest("[data-action]");if(!el)return;var action=el.dataset.action;',
-'  if(action==="revoke"){if(!confirm("Revoke this link?"))return;fetch("/api/shares/"+el.dataset.token,{method:"DELETE"}).then(function(r){if(r.ok){toast("revoked");loadShares();loadAnalytics();}else toast("failed");});}',
-'  else if(action==="copy"){navigator.clipboard.writeText(el.dataset.url).then(function(){toast("copied!");}).catch(function(){toast("copy failed");});}',
-'  else if(action==="logs"){openLogs(el.dataset.token,el.dataset.key);}',
-'  else if(action==="edit"){openEditDialog(el.dataset.share,el.dataset.kind);}',
-'});',
-
-'document.getElementById("albums-tbody").addEventListener("click",function(e){',
-'  var el=e.target.closest("[data-action]");if(!el)return;var action=el.dataset.action;',
-'  if(action==="revoke"){if(!confirm("Revoke this album?"))return;fetch("/api/albums/"+el.dataset.token,{method:"DELETE"}).then(function(r){if(r.ok){toast("revoked");loadAlbums();}else toast("failed");});}',
-'  else if(action==="copy"){navigator.clipboard.writeText(el.dataset.url).then(function(){toast("copied!");}).catch(function(){toast("copy failed");});}',
-'  else if(action==="logs"){openLogs(el.dataset.token,"album");}',
-'  else if(action==="edit"){openEditDialog(el.dataset.share,el.dataset.kind);}',
-'});',
-
-'var drop=document.getElementById("drop-zone");',
-'drop.addEventListener("click",function(){document.getElementById("file-input").click();});',
-'drop.addEventListener("dragover",function(e){e.preventDefault();drop.classList.add("over");});',
-'drop.addEventListener("dragleave",function(){drop.classList.remove("over");});',
-'drop.addEventListener("drop",function(e){e.preventDefault();drop.classList.remove("over");upload(e.dataTransfer.files);});',
-'document.getElementById("file-input").addEventListener("change",function(){upload(this.files);});',
-'document.getElementById("th-name").addEventListener("click",function(){setSort("name");});',
-'document.getElementById("th-type").addEventListener("click",function(){setSort("type");});',
-'document.getElementById("th-size").addEventListener("click",function(){setSort("size");});',
-'document.getElementById("th-date").addEventListener("click",function(){setSort("date");});',
-'load();',
-'})();',
-'</script>',
-'</body>',
-'</html>'
-].join('\n');
-
-export default {
-  async fetch(req, env) {
-    var url = new URL(req.url);
-    var jwtToken = req.headers.get('CF-Access-Jwt-Assertion');
-    var payload = false;
-    if (jwtToken && env.CF_TEAM_DOMAIN) payload = await verifyJwt(jwtToken, env.CF_TEAM_DOMAIN, env.CF_AUD);
-    if (!payload) return new Response('Unauthorized', {status:401});
-
-    var userEmail = payload.email || '';
-    var path = url.pathname;
-    var secret = env.CF_SECRET || '';
-
-    if (path === '/' || path === '') return new Response(HTML, {headers:{'Content-Type':'text/html; charset=UTF-8'}});
-
-    if (path === '/api/files' && req.method === 'GET') {
-      var listed = await env.BUCKET.list();
-      var fileList = listed.objects.map(function(o){return{key:o.key,size:o.size,uploaded:o.uploaded};});
-      return new Response(JSON.stringify(fileList), {headers:{'Content-Type':'application/json','X-User-Email':userEmail}});
-    }
-
-    // analytics
-    if (path === '/api/analytics' && req.method === 'GET') {
-      var now = Math.floor(Date.now()/1000);
-      var todayStart = now - (now % 86400);
-      var results = await Promise.all([
-        env.DB.prepare('SELECT (SELECT COUNT(*) FROM shares)+(SELECT COUNT(*) FROM albums) as c').first(),
-        env.DB.prepare('SELECT (SELECT COUNT(*) FROM shares WHERE active=1)+(SELECT COUNT(*) FROM albums WHERE active=1) as c').first(),
-        env.DB.prepare('SELECT COUNT(*) as c FROM access_logs').first(),
-        env.DB.prepare('SELECT COUNT(*) as c FROM access_logs WHERE accessed_at >= ?').bind(todayStart).first(),
-        env.DB.prepare('SELECT country, COUNT(*) as cnt FROM access_logs WHERE country != "" GROUP BY country ORDER BY cnt DESC LIMIT 10').all(),
-        env.DB.prepare('SELECT user_agent, COUNT(*) as cnt FROM access_logs WHERE user_agent != "" GROUP BY user_agent ORDER BY cnt DESC LIMIT 10').all(),
-        env.DB.prepare('SELECT token, file_key, accessed_at, ip, country FROM access_logs ORDER BY accessed_at DESC LIMIT 20').all(),
-      ]);
-      function parseUA(ua) {
-        if (!ua) return 'Unknown';
-        if (ua.indexOf('Edg') >= 0) return 'Edge';
-        if (ua.indexOf('Chrome') >= 0) return 'Chrome';
-        if (ua.indexOf('Firefox') >= 0) return 'Firefox';
-        if (ua.indexOf('Safari') >= 0) return 'Safari';
-        if (ua.indexOf('curl') >= 0) return 'curl';
-        if (ua.indexOf('python') >= 0 || ua.indexOf('Python') >= 0) return 'Python';
-        return 'Other';
-      }
-      var uaMap = {};
-      (results[5].results||[]).forEach(function(row){var b=parseUA(row.user_agent);uaMap[b]=(uaMap[b]||0)+row.cnt;});
-      var uaData = Object.keys(uaMap).map(function(k){return{label:k,count:uaMap[k]};}).sort(function(a,b){return b.count-a.count;});
-      var countryData = (results[4].results||[]).map(function(r){return{label:r.country||'??',count:r.cnt};});
-      return new Response(JSON.stringify({
-        total_links:results[0].c,active_links:results[1].c,
-        total_accesses:results[2].c,today_accesses:results[3].c,
-        by_country:countryData,by_ua:uaData,recent:results[6].results||[],
-      }),{headers:{'Content-Type':'application/json'}});
-    }
-
-    // shares
-    if (path === '/api/shares' && req.method === 'GET') {
-      var shares = await env.DB.prepare(
-        'SELECT s.token,s.file_key,s.label,s.created_at,s.active,s.max_downloads,s.expires_at,(CASE WHEN s.password_hash IS NOT NULL THEN 1 ELSE 0 END) as has_password,(SELECT COUNT(*) FROM access_logs l WHERE l.token=s.token) as download_count FROM shares s ORDER BY s.created_at DESC'
-      ).all();
-      return new Response(JSON.stringify(shares.results),{headers:{'Content-Type':'application/json'}});
-    }
-    if (path === '/api/shares' && req.method === 'POST') {
-      var body = await req.json();
-      var shareToken;
-      if (body.slug) {
-        if (!/^[a-zA-Z0-9_-]{3,60}$/.test(body.slug)) return new Response(JSON.stringify({error:'Invalid slug.'}),{status:400,headers:{'Content-Type':'application/json'}});
-        var existing = await env.DB.prepare('SELECT token FROM shares WHERE token=?').bind(body.slug).first();
-        if (existing) return new Response(JSON.stringify({error:'Slug already in use.'}),{status:409,headers:{'Content-Type':'application/json'}});
-        shareToken = body.slug;
-      } else { shareToken = await genToken(env.DB, 'shares'); }
-      var nowTs = Math.floor(Date.now()/1000);
-      var pwHash = body.password ? await hmac(body.password, secret) : null;
-      await env.DB.prepare('INSERT INTO shares (token,file_key,created_at,created_by,active,label,password_hash,max_downloads,expires_at) VALUES (?,?,?,?,1,?,?,?,?)').bind(shareToken,body.file_key,nowTs,userEmail,body.label||null,pwHash,body.max_downloads||null,body.expires_at||null).run();
-      return new Response(JSON.stringify({token:shareToken}),{headers:{'Content-Type':'application/json'}});
-    }
-    var revokeMatch = path.match(/^\/api\/shares\/([a-zA-Z0-9_-]+)$/);
-    if (revokeMatch && req.method === 'DELETE') {
-      await env.DB.prepare('UPDATE shares SET active=0 WHERE token=?').bind(revokeMatch[1]).run();
-      return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-    }
-    if (revokeMatch && req.method === 'PATCH') {
-      var editBody = await req.json();
-      var setParts=['label=?','max_downloads=?','expires_at=?'];
-      var setVals=[editBody.label||null,editBody.max_downloads||null,editBody.expires_at||null];
-      if (editBody.clear_password){setParts.push('password_hash=NULL');}
-      else if (editBody.password){setParts.push('password_hash=?');setVals.push(await hmac(editBody.password,secret));}
-      setVals.push(revokeMatch[1]);
-      var stmt=env.DB.prepare('UPDATE shares SET '+setParts.join(',')+'  WHERE token=?');
-      await stmt.bind.apply(stmt,setVals).run();
-      return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-    }
-
-    // albums
-    if (path === '/api/albums' && req.method === 'GET') {
-      var albums = await env.DB.prepare(
-        'SELECT a.token,a.label,a.created_at,a.active,a.max_downloads,a.expires_at,(CASE WHEN a.password_hash IS NOT NULL THEN 1 ELSE 0 END) as has_password,(SELECT COUNT(*) FROM album_files af WHERE af.album_token=a.token) as file_count,(SELECT COUNT(*) FROM access_logs l WHERE l.token=a.token) as visit_count FROM albums a ORDER BY a.created_at DESC'
-      ).all();
-      return new Response(JSON.stringify(albums.results),{headers:{'Content-Type':'application/json'}});
-    }
-    if (path === '/api/albums' && req.method === 'POST') {
-      var body = await req.json();
-      var albumToken;
-      if (body.slug) {
-        if (!/^[a-zA-Z0-9_-]{3,60}$/.test(body.slug)) return new Response(JSON.stringify({error:'Invalid slug.'}),{status:400,headers:{'Content-Type':'application/json'}});
-        var existingAlb = await env.DB.prepare('SELECT token FROM albums WHERE token=?').bind(body.slug).first();
-        if (existingAlb) return new Response(JSON.stringify({error:'Slug already in use.'}),{status:409,headers:{'Content-Type':'application/json'}});
-        albumToken = body.slug;
-      } else { albumToken = await genToken(env.DB, 'albums'); }
-      var nowTs = Math.floor(Date.now()/1000);
-      var pwHash = body.password ? await hmac(body.password, secret) : null;
-      await env.DB.prepare('INSERT INTO albums (token,label,created_at,created_by,active,password_hash,max_downloads,expires_at) VALUES (?,?,?,?,1,?,?,?)').bind(albumToken,body.label||null,nowTs,userEmail,pwHash,body.max_downloads||null,body.expires_at||null).run();
-      var fileKeys = body.file_keys || [];
-      for (var i = 0; i < fileKeys.length; i++) {
-        await env.DB.prepare('INSERT INTO album_files (album_token,file_key,sort_order) VALUES (?,?,?)').bind(albumToken,fileKeys[i],i).run();
-      }
-      return new Response(JSON.stringify({token:albumToken}),{headers:{'Content-Type':'application/json'}});
-    }
-    var albumRevokeMatch = path.match(/^\/api\/albums\/([a-zA-Z0-9_-]+)$/);
-    if (albumRevokeMatch && req.method === 'DELETE') {
-      await env.DB.prepare('UPDATE albums SET active=0 WHERE token=?').bind(albumRevokeMatch[1]).run();
-      return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-    }
-    if (albumRevokeMatch && req.method === 'PATCH') {
-      var editBody = await req.json();
-      var setParts=['label=?','max_downloads=?','expires_at=?'];
-      var setVals=[editBody.label||null,editBody.max_downloads||null,editBody.expires_at||null];
-      if (editBody.clear_password){setParts.push('password_hash=NULL');}
-      else if (editBody.password){setParts.push('password_hash=?');setVals.push(await hmac(editBody.password,secret));}
-      setVals.push(albumRevokeMatch[1]);
-      var stmt2=env.DB.prepare('UPDATE albums SET '+setParts.join(',')+'  WHERE token=?');
-      await stmt2.bind.apply(stmt2,setVals).run();
-      return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-    }
-
-    // logs
-    var logsMatch = path.match(/^\/api\/logs\/([a-zA-Z0-9_-]+)$/);
-    if (logsMatch && req.method === 'GET') {
-      var logs = await env.DB.prepare('SELECT accessed_at,ip,country,user_agent,referer FROM access_logs WHERE token=? ORDER BY accessed_at DESC LIMIT 500').bind(logsMatch[1]).all();
-      return new Response(JSON.stringify(logs.results),{headers:{'Content-Type':'application/json'}});
-    }
-
-    // file operations
-    var fileMatch = path.match(/^\/api\/file\/(.+)$/);
-    if (fileMatch) {
-      var key = decodeURIComponent(fileMatch[1]);
-      if (req.method === 'GET') {
-        var obj = await env.BUCKET.get(key);
-        if (!obj) return new Response('Not Found',{status:404});
-        return new Response(obj.body,{headers:{'Content-Type':getMime(key),'Content-Disposition':'attachment; filename="'+encodeURIComponent(key.split('/').pop())+'"','Cache-Control':'private, no-cache'}});
-      }
-      if (req.method === 'PUT') {
-        var ct = req.headers.get('Content-Type') || 'application/octet-stream';
-        await env.BUCKET.put(key, req.body, {httpMetadata:{contentType:ct},customMetadata:{uploadedBy:userEmail}});
-        return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-      }
-      if (req.method === 'DELETE') {
-        await env.BUCKET.delete(key);
-        return new Response('{"ok":true}',{headers:{'Content-Type':'application/json'}});
-      }
-    }
-
-    return new Response('Not Found',{status:404});
+  function toast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    setTimeout(function(){ el.classList.remove('show'); }, 2500);
   }
-};
+
+  function togglePrivacy() {
+    var body = document.getElementById('pp-body');
+    var arrow = document.getElementById('pp-arrow');
+    body.classList.toggle('open');
+    arrow.textContent = body.classList.contains('open') ? '[ - ]' : '[ + ]';
+  }
+  window.togglePrivacy = togglePrivacy;
+
+  function djb2(str) {
+    var h = 5381;
+    for (var i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  }
+
+  function getGPU() {
+    try {
+      var c = document.createElement('canvas');
+      var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (!gl) return { vendor: 'n/a', renderer: 'n/a' };
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return ext
+        ? { vendor: gl.getParameter(ext.UNMASKED_VENDOR_WEBGL), renderer: gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) }
+        : { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
+    } catch(e) { return { vendor: 'n/a', renderer: 'n/a' }; }
+  }
+
+  function getCanvasFP() {
+    try {
+      var c = document.createElement('canvas');
+      c.width = 280; c.height = 60;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#f0f'; ctx.fillRect(0, 0, 280, 60);
+      ctx.fillStyle = '#0ff'; ctx.font = 'bold 18px Arial';
+      ctx.fillText('fp test', 10, 28);
+      ctx.fillStyle = 'rgba(255,128,0,0.6)'; ctx.font = '14px "Courier New"';
+      ctx.fillText('canvas 2024', 40, 48);
+      ctx.strokeStyle = '#00f'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(220, 30, 22, 0, Math.PI * 2); ctx.stroke();
+      return djb2(c.toDataURL().slice(22, 200));
+    } catch(e) { return 'n/a'; }
+  }
+
+  function getAudioFP() {
+    return new Promise(function(resolve) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { resolve('n/a'); return; }
+        var ctx = new AC();
+        var osc = ctx.createOscillator();
+        var analyser = ctx.createAnalyser();
+        var gain = ctx.createGain();
+        gain.gain.value = 0;
+        osc.type = 'triangle'; osc.frequency.value = 10000;
+        osc.connect(analyser); analyser.connect(gain); gain.connect(ctx.destination);
+        osc.start(0);
+        setTimeout(function(){
+          var data = new Float32Array(analyser.frequencyBinCount);
+          analyser.getFloatFrequencyData(data);
+          osc.stop();
+          ctx.close();
+          var sum = data.slice(0, 128).reduce(function(a, b){ return a + Math.abs(b); }, 0);
+          resolve(djb2(sum.toFixed(8)));
+        }, 100);
+      } catch(e) { resolve('n/a'); }
+    });
+  }
+
+  function detectFonts() {
+    var list = [
+      'Arial','Arial Black','Comic Sans MS','Courier New','Georgia',
+      'Helvetica','Impact','Palatino','Times New Roman','Verdana','Tahoma',
+      'Lucida Console','Meiryo','Yu Gothic','Yu Mincho','MS Gothic','MS Mincho',
+      'Hiragino Kaku Gothic Pro','Menlo','Monaco','Consolas','Fira Code',
+      'JetBrains Mono','Roboto','Noto Sans','Source Code Pro'
+    ];
+    var c = document.createElement('canvas');
+    var ctx = c.getContext('2d');
+    var probe = 'mmmmmmmmmmlli';
+    ctx.font = '72px monospace';
+    var base = ctx.measureText(probe).width;
+    var found = list.filter(function(f) {
+      ctx.font = '72px "' + f + '", monospace';
+      return ctx.measureText(probe).width !== base;
+    });
+    return found;
+  }
+
+  function getLocalIP() {
+    return new Promise(function(resolve) {
+      try {
+        var pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        pc.createOffer().then(function(o){ return pc.setLocalDescription(o); });
+        var ips = new Set();
+        pc.onicecandidate = function(e) {
+          if (!e || !e.candidate) return;
+          var m = e.candidate.candidate.match(/(\d{1,3}(?:\.\d{1,3}){3})/g);
+          if (m) m.forEach(function(ip){ if (!ip.startsWith('0.')) ips.add(ip); });
+        };
+        setTimeout(function(){ pc.close(); resolve(ips.size ? Array.from(ips).join(', ') : 'n/a'); }, 1500);
+      } catch(e) { resolve('n/a'); }
+    });
+  }
+
+  function load() {
+    // browser / OS
+    set('ua', navigator.userAgent);
+    set('lang', (navigator.languages || [navigator.language]).join(', '));
+    set('platform', navigator.platform || 'unknown');
+    set('tz-client', Intl.DateTimeFormat().resolvedOptions().timeZone);
+    set('dark-mode', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    set('cookies', navigator.cookieEnabled ? 'enabled' : 'disabled');
+    var dnt = navigator.doNotTrack;
+    set('dnt', dnt === '1' ? 'enabled' : dnt === '0' ? 'disabled' : 'not set');
+
+    if (navigator.userAgentData) {
+      navigator.userAgentData.getHighEntropyValues(['architecture','bitness']).then(function(d){
+        set('arch', [d.architecture, d.bitness ? d.bitness + 'bit' : ''].filter(Boolean).join(' ') || 'unknown');
+      }).catch(function(){ set('arch', 'n/a'); });
+    } else { set('arch', 'n/a'); }
+
+    // display
+    set('resolution', screen.width + ' x ' + screen.height);
+    set('dpr', window.devicePixelRatio + 'x' + (window.devicePixelRatio >= 2 ? ' (HiDPI)' : ''));
+    set('color-depth', screen.colorDepth + ' bit');
+    set('hdr', matchMedia('(dynamic-range: high)').matches ? 'supported' : 'not supported');
+    set('touch-points', navigator.maxTouchPoints + (navigator.maxTouchPoints > 0 ? ' (touch)' : ' (no touch)'));
+
+    // hardware
+    var gpu = getGPU();
+    set('gpu-vendor', gpu.vendor);
+    set('gpu-renderer', gpu.renderer);
+    set('cpu-cores', navigator.hardwareConcurrency ? navigator.hardwareConcurrency + ' logical cores' : 'n/a');
+    set('memory', navigator.deviceMemory ? navigator.deviceMemory + ' GB (approx)' : 'n/a');
+
+    // battery
+    if (navigator.getBattery) {
+      navigator.getBattery().then(function(b){
+        var pct = Math.round(b.level * 100);
+        set('battery-level', pct + '%');
+        var cs = b.charging ? 'charging' : 'discharging';
+        if (b.charging && b.chargingTime !== Infinity) cs += ' ??? full in ' + Math.round(b.chargingTime/60) + ' min';
+        if (!b.charging && b.dischargingTime !== Infinity) cs += ' ??? ' + Math.round(b.dischargingTime/60) + ' min remaining';
+        set('battery-charging', cs);
+      }).catch(function(){ set('battery-level', 'n/a'); set('battery-charging', 'n/a'); });
+    } else {
+      set('battery-level', 'n/a (Safari)');
+      set('battery-charging', 'n/a (Safari)');
+    }
+
+    // network quality
+    var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+      set('conn-type', conn.effectiveType || conn.type || 'unknown');
+      set('downlink', conn.downlink != null ? conn.downlink + ' Mbps (est.)' : 'unknown');
+      set('rtt', conn.rtt != null ? conn.rtt + ' ms' : 'unknown');
+      set('save-data', conn.saveData ? 'enabled' : 'disabled');
+    } else {
+      ['conn-type','downlink','rtt','save-data'].forEach(function(id){ set(id, 'n/a'); });
+    }
+
+    // fingerprints
+    set('canvas-fp', getCanvasFP());
+    getAudioFP().then(function(fp){ set('audio-fp', fp); });
+    var fonts = detectFonts();
+    set('fonts', fonts.length + ' detected ??? ' + fonts.join(', '));
+
+    // WebRTC local IP
+    getLocalIP().then(function(ip){ set('local-ip', ip); });
+
+    // ipinfo.io
+    fetch('https://ipinfo.io/json')
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        set('ip', d.ip);
+        set('hostname', d.hostname);
+        set('city', d.city);
+        set('region', d.region);
+        set('country', d.country);
+        set('org', d.org);
+        set('timezone', d.timezone);
+      }).catch(function(){
+        ['ip','hostname','city','region','country','org','timezone'].forEach(function(id){ set(id, 'error'); });
+      });
+
+    document.getElementById('footer-ts').textContent = '// ' + new Date().toISOString();
+  }
+
+  window.load = load;
+  load();
+})();
+</script>
+</body>
+</html>
